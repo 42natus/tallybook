@@ -17,13 +17,21 @@ PACE_SECONDS=1.5          # GitHub's secondary content-creation limit returns a
                           # bare 403, not a documented rate-limit error, so pace
                           # creations rather than relying on detecting it.
 APPLY=0
+LIMIT=0                   # 0 = no limit. --limit N stops after N creations, for
+                          # a staged rollout: create a few, read one back from
+                          # GitHub to confirm the body and labels rendered, then
+                          # re-run without --limit to do the rest.
 
-for arg in "$@"; do
+while [ $# -gt 0 ]; do
+  arg="$1"
   case "$arg" in
     --apply) APPLY=1 ;;
+    --limit) shift; LIMIT="${1:-0}"
+             case "$LIMIT" in ''|*[!0-9]*) echo "--limit needs a number" >&2; exit 2 ;; esac ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $arg (use --apply to create, or no arguments to dry-run)" >&2; exit 2 ;;
   esac
+  shift
 done
 
 command -v gh  >/dev/null || { echo "gh is required but not on PATH" >&2; exit 1; }
@@ -109,6 +117,13 @@ while [ "$index" -lt "$TOTAL" ]; do
   fi
   echo "       -> $url"
   created=$((created + 1))
+  if [ "$LIMIT" -gt 0 ] && [ "$created" -ge "$LIMIT" ]; then
+    echo
+    echo "stopping at --limit $LIMIT. $created created, $skipped skipped."
+    echo "Read one back to confirm it rendered, then re-run without --limit to"
+    echo "create the remaining $((TOTAL - skipped - created)); these are skipped by title."
+    exit 0
+  fi
   sleep "$PACE_SECONDS"
 done
 
