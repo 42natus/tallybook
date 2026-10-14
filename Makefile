@@ -1,4 +1,4 @@
-.PHONY: build test test-ci vet fmt fmt-check staticcheck lint check tidy up down up-all down-all backlog backlog-verify
+.PHONY: build test test-ci vet fmt fmt-check staticcheck lint check tidy up down up-all down-all backlog backlog-verify backlog-examples
 
 GOFILES := $(shell find . -name '*.go' -not -path './vendor/*')
 
@@ -56,3 +56,8 @@ backlog:
 # cited by every issue still resolves.
 backlog-verify:
 	bash scripts/verify-wave-backlog.sh
+
+# backlog-examples: re-derive the 118 example issues from the code and assert
+# they all still appear in the backlog, so a citation cannot rot unnoticed.
+backlog-examples:
+	python3 scripts/gen-example-issues.py --check
