@@ -2782,5 +2782,105 @@
     ],
     "good_first_issue": true,
     "entry_point": "internal/meter/anchor.go"
+  },
+  {
+    "title": "docs(meter): add a runnable example for Catalog",
+    "complexity": "low",
+    "area": "meter",
+    "description": "Add `ExampleCatalog` for `Catalog` (internal/meter/pricing.go:47), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.",
+    "why": "`Catalog` is exported from `internal/meter` at internal/meter/pricing.go:47 (`type Catalog struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.",
+    "criteria": [
+      "`ExampleCatalog` exists in `internal/meter/pricing_test.go` and constructs the type the way a caller would",
+      "The example sets every field a caller is required to set, and leaves the ones the package fills in alone",
+      "The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted",
+      "`go test ./internal/meter/...` passes"
+    ],
+    "guidance": [
+      "The declaration is at internal/meter/pricing.go:47 \u2014 read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.",
+      "`internal/meter/pricing_test.go` already tests this file \u2014 add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.",
+      "An example whose `// Output:` comment does not match is a build failure. That is the point \u2014 do not delete the comment to make it pass."
+    ],
+    "good_first_issue": true,
+    "entry_point": "internal/meter/pricing.go"
+  },
+  {
+    "title": "docs(meter): add a runnable example for CatalogSource",
+    "complexity": "low",
+    "area": "meter",
+    "description": "Add `ExampleCatalogSource` for `CatalogSource` (internal/meter/period.go:225), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.",
+    "why": "`CatalogSource` is exported from `internal/meter` at internal/meter/period.go:225 (`type CatalogSource interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.",
+    "criteria": [
+      "`ExampleCatalogSource` exists in `internal/meter/period_test.go` and constructs the type the way a caller would",
+      "The example sets every field a caller is required to set, and leaves the ones the package fills in alone",
+      "The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted",
+      "`go test ./internal/meter/...` passes"
+    ],
+    "guidance": [
+      "The declaration is at internal/meter/period.go:225 \u2014 read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.",
+      "`internal/meter/period_test.go` already tests this file \u2014 add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.",
+      "An example whose `// Output:` comment does not match is a build failure. That is the point \u2014 do not delete the comment to make it pass."
+    ],
+    "good_first_issue": true,
+    "entry_point": "internal/meter/period.go"
+  },
+  {
+    "title": "docs(meter): add a runnable example for CatalogVersion",
+    "complexity": "low",
+    "area": "meter",
+    "description": "Add `ExampleCatalogVersion` for `CatalogVersion` (internal/meter/pricing.go:36), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.",
+    "why": "`CatalogVersion` is exported from `internal/meter` at internal/meter/pricing.go:36 (`type CatalogVersion struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.",
+    "criteria": [
+      "`ExampleCatalogVersion` exists in `internal/meter/pricing_test.go` and constructs the type the way a caller would",
+      "The example sets every field a caller is required to set, and leaves the ones the package fills in alone",
+      "The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted",
+      "`go test ./internal/meter/...` passes"
+    ],
+    "guidance": [
+      "The declaration is at internal/meter/pricing.go:36 \u2014 read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.",
+      "`internal/meter/pricing_test.go` already tests this file \u2014 add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.",
+      "An example whose `// Output:` comment does not match is a build failure. That is the point \u2014 do not delete the comment to make it pass."
+    ],
+    "good_first_issue": true,
+    "entry_point": "internal/meter/pricing.go"
+  },
+  {
+    "title": "docs(meter): add a runnable example for LedgerSource",
+    "complexity": "low",
+    "area": "meter",
+    "description": "Add `ExampleLedgerSource` for `LedgerSource` (internal/meter/period.go:234), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.",
+    "why": "`LedgerSource` is exported from `internal/meter` at internal/meter/period.go:234 (`type LedgerSource interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.",
+    "criteria": [
+      "`ExampleLedgerSource` exists in `internal/meter/period_test.go` and constructs the type the way a caller would",
+      "The example sets every field a caller is required to set, and leaves the ones the package fills in alone",
+      "The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted",
+      "`go test ./internal/meter/...` passes"
+    ],
+    "guidance": [
+      "The declaration is at internal/meter/period.go:234 \u2014 read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.",
+      "`internal/meter/period_test.go` already tests this file \u2014 add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.",
+      "An example whose `// Output:` comment does not match is a build failure. That is the point \u2014 do not delete the comment to make it pass."
+    ],
+    "good_first_issue": true,
+    "entry_point": "internal/meter/period.go"
+  },
+  {
+    "title": "docs(meter): add a runnable example for Period",
+    "complexity": "low",
+    "area": "meter",
+    "description": "Add `ExamplePeriod` for `Period` (internal/meter/period.go:27), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.",
+    "why": "`Period` is exported from `internal/meter` at internal/meter/period.go:27 (`type Period struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.",
+    "criteria": [
+      "`ExamplePeriod` exists in `internal/meter/period_test.go` and constructs the type the way a caller would",
+      "The example sets every field a caller is required to set, and leaves the ones the package fills in alone",
+      "The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted",
+      "`go test ./internal/meter/...` passes"
+    ],
+    "guidance": [
+      "The declaration is at internal/meter/period.go:27 \u2014 read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.",
+      "`internal/meter/period_test.go` already tests this file \u2014 add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.",
+      "An example whose `// Output:` comment does not match is a build failure. That is the point \u2014 do not delete the comment to make it pass."
+    ],
+    "good_first_issue": true,
+    "entry_point": "internal/meter/period.go"
   }
 ]

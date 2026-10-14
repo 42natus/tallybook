@@ -5,14 +5,14 @@
 
 # Wave 2 backlog
 
-**140 issues · 14600 points.**
+**145 issues · 25000 points.**
 
 | Tier | Label | Count | Points each | Subtotal |
 |---|---|---:|---:|---:|
-| high | `complexity: high` | 1 | 200 | 200 |
-| medium | `complexity: medium` | 10 | 150 | 1500 |
-| low | `complexity: low` | 129 | 100 | 12900 |
-| **total** | | **140** | | **14600** |
+| high | `complexity: high` | 1 | 340 | 340 |
+| medium | `complexity: medium` | 10 | 255 | 2550 |
+| low | `complexity: low` | 134 | 165 | 22110 |
+| **total** | | **145** | | **25000** |
 
 Complexity uses this repository's existing `complexity: low|medium|high` labels (see `gh label list`); `trivial` in the wave brief maps to `low`. Grades describe real scope, per `MAINTAINER.md` section 2 — they are not adjusted to reach a point total.
 
@@ -22,7 +22,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 1. fix(workspace): set read, write and idle timeouts on all three http servers
 
-`complexity: high` · 200 points · area `workspace`
+`complexity: high` · 340 points · area `workspace`
 
 **What's wrong.** cmd/collector/main.go:110, cmd/indexer/main.go:105 and cmd/settler/main.go:114 each build a server with only Addr and Handler. A connection that opens and never completes its request headers is held indefinitely, so a trivial Slowloris exhausts the listener. On the settler that takes down the /metrics endpoint §6 calls the operator's alerting surface for the nearest refund deadline — the single most important number this system produces — while the deadline keeps approaching. CLAUDE.md §8 already requires every external call to carry a timeout; the inbound direction was missed.
 
@@ -47,7 +47,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 2. refactor(settle): replace raw lifecycle status literals with typed constants
 
-`complexity: medium` · 150 points · area `settle`
+`complexity: medium` · 255 points · area `settle`
 
 **What's wrong.** internal/settle/policy.go:95 decides the channel-closing sweep trigger on `state.Status == "closing"`. The same untyped literals recur in internal/settle/submit.go:160, internal/settle/retry.go:156, internal/meter/anchor.go:375 and internal/meter/period.go:107. A misspelling compiles and silently disables a sweep trigger; §6 lists channel-closing as one of four triggers that decide whether the operator gets paid before the funder can reclaim the balance. The repo already does this correctly for protocol names (internal/httpapi/metering.go:26) — the lifecycle statuses just never got the same treatment.
 
@@ -70,7 +70,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 3. ci(workspace): add govulncheck and a gosec job to the pipeline
 
-`complexity: medium` · 150 points · area `ci`
+`complexity: medium` · 255 points · area `ci`
 
 **What's wrong.** .github/workflows/ci.yml has no vulnerability or security-lint step. This is not hypothetical: the missing HTTP server timeouts filed alongside this issue are exactly gosec's G112 (Slowloris), and nothing in the current pipeline flags them. For a repository whose own CONTRIBUTING opens with "Tallybook is infrastructure that handles money" and which pins two direct dependencies handling XDR and Postgres, an unnoticed advisory in either is a live risk.
 
@@ -93,7 +93,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 4. fix(settle): make Decide refuse a channel that is not open or closing
 
-`complexity: medium` · 150 points · area `settle`
+`complexity: medium` · 255 points · area `settle`
 
 **What's wrong.** §6 scopes the sweep to "every channel with status IN ('open','closing')", but internal/settle/policy.go only inspects status to test for "closing" at line 95. A channel already refunded or closed, reaching Decide with a stale non-zero exposure row, satisfies the deadline-pressure branch above it and returns ShouldSettle — a settle attempt against a channel with nothing left to take, which is a pure transaction-fee loss. The daemon's own query currently filters correctly, so this is a latent gap rather than a live bug; Decide is documented as a pure total function of its inputs, which is exactly why it should not depend on a caller invariant it can check itself.
 
@@ -116,7 +116,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 5. fix(stellar): verify the generated auth nonce is in the range soroban accepts
 
-`complexity: medium` · 150 points · area `stellar`
+`complexity: medium` · 255 points · area `stellar`
 
 **What's wrong.** internal/stellar/invoke.go:278 returns `int64(binary.BigEndian.Uint64(b[:]))`. With the top bit set — half the time — the nonce is negative. Whether the host accepts a negative nonce in a SorobanAddressCredentials entry is not something this repo has verified, and CONTRIBUTING is explicit that a change or claim in internal/stellar must be checked "against the live Soroban RPC surface or the real contract source first". The same file already documents one hard-won nonce-footprint trap (CLAUDE.md §4), so the cost of being wrong here is a class of intermittent, hard-to-reproduce auth failure on roughly half of fresh invocations.
 
@@ -139,7 +139,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 6. fix(workspace): compare ErrServerClosed with errors.Is, not !=
 
-`complexity: low` · 100 points · area `workspace` · `good first issue`
+`complexity: low` · 165 points · area `workspace` · `good first issue`
 
 **What's wrong.** cmd/collector/main.go:114, cmd/indexer/main.go:119 and cmd/settler/main.go:128 all use `!=`. CLAUDE.md §8 and CONTRIBUTING both require sentinel errors to be matched with errors.Is. Today net/http returns the sentinel unwrapped so the comparison happens to work; if that ever changes, or a middleware wraps it, each binary logs a normal shutdown as a fatal startup error instead — noise in exactly the logs an operator reads during an incident.
 
@@ -164,7 +164,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 7. refactor(stellar): remove the panic from mustScAddress
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** internal/stellar/invoke.go:288 is the only panic in non-test code under internal/. CLAUDE.md §8 states the rule without exception — "No panics outside main startup validation. A library function returns an error" — and CONTRIBUTING repeats it. The existing comment argues the input is always a package-internal constant, which is true today, but contract IDs reach this package from TB_PRICE_BOOK_ID and TB_STATEMENT_REGISTRY_ID (§7), so the assumption is one config path away from being false, and the failure mode is a crashed daemon rather than a startup error naming the bad variable.
 
@@ -189,7 +189,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 8. test(workspace): convert the remaining non-table tests to subtests
 
-`complexity: low` · 100 points · area `workspace` · `good first issue`
+`complexity: low` · 165 points · area `workspace` · `good first issue`
 
 **What's wrong.** CONTRIBUTING requires "Table-driven tests, subtests via t.Run" and CLAUDE.md §8 repeats it, but the measured ratio across the repo is 27 t.Run sites to 281 test functions. Some of those tests are legitimately not table-shaped — an integration test against Postgres often is not — so this is an audit with a conversion, not a blanket rewrite. The payoff is that a failing case names itself instead of failing an umbrella test.
 
@@ -214,7 +214,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 9. chore(workspace): add CODEOWNERS routing money-path packages to review
 
-`complexity: low` · 100 points · area `ci` · `good first issue`
+`complexity: low` · 165 points · area `ci` · `good first issue`
 
 **What's wrong.** There is no CODEOWNERS file anywhere in the repo. CONTRIBUTING says changes touching money handling, secret handling or an on-chain interface "get the closest review", but nothing enforces that routing, so such a PR can be approved by whoever is free. §5 calls commitments "THE MOST IMPORTANT TABLE IN THIS SCHEMA" and a bad migration against it is unrecoverable.
 
@@ -239,7 +239,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 10. docs(workspace): add a pull request template carrying the money-path checklist
 
-`complexity: low` · 100 points · area `workspace` · `good first issue`
+`complexity: low` · 165 points · area `workspace` · `good first issue`
 
 **What's wrong.** No PR template exists. CONTRIBUTING's "Opening a PR" section lists exactly what a PR must say — including that "the requirement as written would lose money" is a legitimate reason to flag rather than build — but a contributor only learns this by reading CONTRIBUTING first. A template puts the prompt where the work happens.
 
@@ -264,7 +264,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 11. chore(workspace): add an editorconfig covering go, sql and yaml
 
-`complexity: low` · 100 points · area `workspace` · `good first issue`
+`complexity: low` · 165 points · area `workspace` · `good first issue`
 
 **What's wrong.** No .editorconfig exists. gofmt keeps Go consistent, but the SQL migrations under internal/store/migrations and the YAML in .github/workflows have no formatter at all, and a migration is a file nobody may edit once applied (§5) — so a whitespace-only diff on one is noise on exactly the files that most need a clean history.
 
@@ -289,7 +289,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 12. ci(workspace): evaluate golangci-lint against the existing staticcheck job
 
-`complexity: low` · 100 points · area `ci` · `good first issue`
+`complexity: low` · 165 points · area `ci` · `good first issue`
 
 **What's wrong.** There is no .golangci.yml and CI runs staticcheck alone (.github/workflows/ci.yml). staticcheck is strong but does not cover several classes this codebase cares about — errorlint for the %w and errors.Is rules CLAUDE.md §8 mandates, and bodyclose on the Soroban RPC client's HTTP responses. Whether that is worth a second linter is a real question, not a foregone conclusion.
 
@@ -314,7 +314,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 13. ci(workspace): enable dependabot for go modules and github actions
 
-`complexity: low` · 100 points · area `ci` · `good first issue`
+`complexity: low` · 165 points · area `ci` · `good first issue`
 
 **What's wrong.** No .github/dependabot.yml exists. go.mod pins two direct dependencies — github.com/jackc/pgx/v5 and github.com/stellar/go-stellar-sdk — that respectively hold the database credentials and build the transactions that move money, and the workflow pins actions/checkout and actions/setup-go by major version. Nothing currently tells anyone when an update to either lands. CONTRIBUTING's "justify every third-party module" rule makes the small dependency surface a deliberate choice, which makes watching it cheap.
 
@@ -339,7 +339,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 14. refactor(store): consolidate the three copies of numericToBigInt
 
-`complexity: medium` · 150 points · area `store`
+`complexity: medium` · 255 points · area `store`
 
 **What's wrong.** internal/settle/numeric.go:23, internal/meter/numeric.go:22 and internal/indexer/reconcile.go:138 each define their own numericToBigInt, converting a pgtype.Numeric into the *big.Int that every amount in this system is carried as. This is the single conversion standing between NUMERIC(39,0) in Postgres and the money arithmetic CLAUDE.md §8 insists is integer-only. Three copies means a correctness fix — negative exponents, NaN, a null Int — lands in one and silently misses two, and the three are not guaranteed identical today. A rounding bug here is a financial bug by the repo's own framing.
 
@@ -364,7 +364,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 15. test(stellar): add a fuzz target for the eight contract event decoders
 
-`complexity: medium` · 150 points · area `stellar`
+`complexity: medium` · 255 points · area `stellar`
 
 **What's wrong.** internal/stellar/events.go exposes eight decoders taking a base64 string straight off the chain — DecodePriceBookPublishEvent at line 98 through DecodeChannelRefundEvent at line 381. The repo has zero fuzz targets. This input is attacker-adjacent: anyone can emit an event with matching topics on a public network, and issue #7 is a live case of a decoder meeting a real payload it did not expect and wedging cmd/indexer's cursor permanently. A fuzzer is the cheapest way to find the next one before the network does.
 
@@ -388,7 +388,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 16. test(stellar): add a fuzz target for the ScVal decode helpers
 
-`complexity: medium` · 150 points · area `stellar`
+`complexity: medium` · 255 points · area `stellar`
 
 **What's wrong.** internal/stellar/xdr.go:177-295 defines twelve decoders — DecodeBool through DecodeMap — each of which must reject a mismatched ScVal type. There are no fuzz targets in the repo. DecodeI128 at line 218 is the one that matters most: it reassembles a 128-bit amount from hi and lo words, and every charged amount and settlement figure in the system passes through it. A sign or shift error there is a money error, and it is exactly the class a fuzzer finds.
 
@@ -411,7 +411,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 17. test(meter): add a fuzz target for ParseSchedule
 
-`complexity: medium` · 150 points · area `meter`
+`complexity: medium` · 255 points · area `meter`
 
 **What's wrong.** internal/meter/schedule.go:81 parses an operator's price schedule from raw bytes, guarded by six sentinels at lines 24-29 including ErrUnitPriceOutOfRange, which exists specifically to keep a price inside the i128 range statement_registry uses. The repo has no fuzz targets. This function decides what every request is charged; a schedule that parses into a valid-looking struct with a bad unit price prices real traffic wrongly, and the pricing path has no second check behind it.
 
@@ -434,7 +434,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 18. test(merkle): add a fuzz target asserting tree and proof agreement
 
-`complexity: medium` · 150 points · area `merkle`
+`complexity: medium` · 255 points · area `merkle`
 
 **What's wrong.** internal/merkle/tree.go builds the sorted-pair tree whose roots the deployed statement_registry accepts or rejects, and enforces the 32-node cap at line 93. The repo has no fuzz targets. CLAUDE.md §4 warns that sorted-pair implementations diverge on unbalanced trees and that the seven-leaf fixture is where that shows; a fuzzer over arbitrary leaf counts covers the unbalanced shapes no fixture enumerates. A root this package gets wrong is a proof the contract refuses on chain, which is an anchor that cannot be submitted.
 
@@ -458,7 +458,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 19. test(store): add a fuzz target for ParseMigrations
 
-`complexity: low` · 100 points · area `store` · `good first issue`
+`complexity: low` · 165 points · area `store` · `good first issue`
 
 **What's wrong.** internal/store/migrate.go:39 parses numbered migration files into an ordered list, and §5 is explicit that an applied migration must never be edited. The repo has no fuzz targets. Migration ordering decides the shape of the commitments table — "THE MOST IMPORTANT TABLE IN THIS SCHEMA" — so a filename the parser mis-sorts or silently skips is a schema applied in the wrong order on a fresh database, which is a failure nobody sees until production.
 
@@ -483,7 +483,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 20. test(httpapi): add a benchmark for the metering middleware hot path
 
-`complexity: medium` · 150 points · area `httpapi`
+`complexity: medium` · 255 points · area `httpapi`
 
 **What's wrong.** CLAUDE.md §5 calls the requests table "The hot path", and internal/httpapi/metering.go is the code on it — every metered request passes through it, generating a request ID, hashing the endpoint and pricing against the catalog. The repo has zero benchmarks, so the per-request cost of metering a paid API is simply unknown, and so is whether a change to it regressed anything. An operator deciding whether to put this in front of a high-volume API has no number to reason about.
 
@@ -506,7 +506,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 21. test(merkle): add benchmarks for tree building and proof generation
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** internal/merkle/tree.go builds a tree over every request in a billing period before a statement can be anchored. The repo has zero benchmarks. A period covering a month of a busy API is a large leaf set, and nothing records how long that takes or how much it allocates — so nobody knows whether period closing is a millisecond or a minute, which is the difference between anchoring on time and holding a transaction open against the price-change boundary §4 forbids a statement from spanning.
 
@@ -531,7 +531,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 22. test(settle): add a benchmark for exposure calculation
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** internal/settle/exposure.go:72 runs two correlated subqueries over commitments for every channel, on every settler tick. The repo has zero benchmarks. §6 requires this to run for every open channel each tick, so the per-channel cost sets the ceiling on how many channels one settler can watch — and the settler is the component that decides whether the operator gets paid. That ceiling is currently unmeasured.
 
@@ -556,7 +556,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 23. docs(config): add a runnable example for Config.LogValue
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Config.LogValue` is exported from `internal/config` at internal/config/config.go:111 (`func (c *Config) LogValue() slog.Value`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -581,7 +581,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 24. docs(config): add a runnable example for Config.String
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Config.String` is exported from `internal/config` at internal/config/config.go:93 (`func (c *Config) String() string`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -606,7 +606,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 25. docs(config): add a runnable example for Secret.GoString
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Secret.GoString` is exported from `internal/config` at internal/config/secret.go:14 (`func (s Secret) GoString() string { return "[REDACTED]" }`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -631,7 +631,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 26. docs(config): add a runnable example for Secret.Reveal
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Secret.Reveal` is exported from `internal/config` at internal/config/secret.go:19 (`func (s Secret) Reveal() string { return string(s) }`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -656,7 +656,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 27. docs(config): add a runnable example for Secret.String
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Secret.String` is exported from `internal/config` at internal/config/secret.go:11 (`func (s Secret) String() string { return "[REDACTED]" }`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -681,7 +681,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 28. docs(httpapi): add a runnable example for Middleware
 
-`complexity: low` · 100 points · area `httpapi` · `good first issue`
+`complexity: low` · 165 points · area `httpapi` · `good first issue`
 
 **What's wrong.** `Middleware` is exported from `internal/httpapi` at internal/httpapi/metering.go:182 (`func Middleware(cfg Config) (func(http.Handler) http.Handler, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -706,7 +706,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 29. docs(merkle): add a runnable example for BuildTree
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `BuildTree` is exported from `internal/merkle` at internal/merkle/tree.go:40 (`func BuildTree(leaves [][32]byte) (*Tree, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -731,7 +731,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 30. docs(merkle): add a runnable example for EndpointHash
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `EndpointHash` is exported from `internal/merkle` at internal/merkle/leaf.go:41 (`func EndpointHash(method, pathTemplate string) [32]byte`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -756,7 +756,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 31. docs(merkle): add a runnable example for Fold
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `Fold` is exported from `internal/merkle` at internal/merkle/tree.go:104 (`func Fold(leaf [32]byte, proof Proof) [32]byte`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -781,7 +781,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 32. docs(merkle): add a runnable example for Leaf
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `Leaf` is exported from `internal/merkle` at internal/merkle/leaf.go:48 (`func Leaf(r Record) ([32]byte, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -806,7 +806,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 33. docs(merkle): add a runnable example for VerifyProof
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `VerifyProof` is exported from `internal/merkle` at internal/merkle/tree.go:115 (`func VerifyProof(root, leaf [32]byte, proof Proof) bool`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -831,7 +831,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 34. docs(meter): add a runnable example for Anchorer.AnchorPeriod
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `Anchorer.AnchorPeriod` is exported from `internal/meter` at internal/meter/anchor.go:366 (`func (a *Anchorer) AnchorPeriod(`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -856,7 +856,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 35. docs(meter): add a runnable example for Catalog.EffectiveLedgerAfter
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `Catalog.EffectiveLedgerAfter` is exported from `internal/meter` at internal/meter/pricing.go:114 (`func (c *Catalog) EffectiveLedgerAfter(version uint32) (uint32, bool)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -881,7 +881,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 36. docs(meter): add a runnable example for Catalog.VersionAt
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `Catalog.VersionAt` is exported from `internal/meter` at internal/meter/pricing.go:86 (`func (c *Catalog) VersionAt(ledger uint32) (*CatalogVersion, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -906,7 +906,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 37. docs(meter): add a runnable example for Pricer.Price
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `Pricer.Price` is exported from `internal/meter` at internal/meter/pricing.go:148 (`func (p *Pricer) Price(ledger uint32, method, pathTemplate string, units uint64) (*PricedRequest, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -931,7 +931,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 38. docs(meter): add a runnable example for Schedule.Lookup
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `Schedule.Lookup` is exported from `internal/meter` at internal/meter/schedule.go:128 (`func (s *Schedule) Lookup(method, pathTemplate string) (*big.Int, bool)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -956,7 +956,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 39. docs(meter): add a runnable example for Schedule.Rules
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `Schedule.Rules` is exported from `internal/meter` at internal/meter/schedule.go:138 (`func (s *Schedule) Rules() []Rule`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -981,7 +981,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 40. docs(meter): add a runnable example for ScheduleHash
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `ScheduleHash` is exported from `internal/meter` at internal/meter/schedule.go:151 (`func ScheduleHash(raw []byte) [32]byte`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1006,7 +1006,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 41. docs(settle): add a runnable example for Daemon.LastSuccessfulChainRead
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `Daemon.LastSuccessfulChainRead` is exported from `internal/settle` at internal/settle/daemon.go:83 (`func (d *Daemon) LastSuccessfulChainRead() (time.Time, bool)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1031,7 +1031,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 42. docs(settle): add a runnable example for Decide
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `Decide` is exported from `internal/settle` at internal/settle/policy.go:80 (`func Decide(p Policy, state ChannelState, currentLedger uint32, now time.Time) Decision`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1056,7 +1056,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 43. docs(settle): add a runnable example for DefaultRetryOptions
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `DefaultRetryOptions` is exported from `internal/settle` at internal/settle/retry.go:69 (`func DefaultRetryOptions(deadline time.Time) RetryOptions`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1081,7 +1081,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 44. docs(settle): add a runnable example for Exposure.Age
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `Exposure.Age` is exported from `internal/settle` at internal/settle/exposure.go:51 (`func (e *Exposure) Age(now time.Time) time.Duration`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1106,7 +1106,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 45. docs(settle): add a runnable example for IsPermanent
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `IsPermanent` is exported from `internal/settle` at internal/settle/retry.go:28 (`func IsPermanent(err error) bool`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1131,7 +1131,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 46. docs(settle): add a runnable example for Metrics.ServeHTTP
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `Metrics.ServeHTTP` is exported from `internal/settle` at internal/settle/metrics.go:50 (`func (m *Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1156,7 +1156,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 47. docs(stellar): add a runnable example for AuthorizeInvocation
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `AuthorizeInvocation` is exported from `internal/stellar` at internal/stellar/invoke.go:190 (`func AuthorizeInvocation(`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1181,7 +1181,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 48. docs(stellar): add a runnable example for BuildCommitment
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `BuildCommitment` is exported from `internal/stellar` at internal/stellar/channel.go:141 (`func BuildCommitment(contractID, networkPassphrase string, amount *big.Int) ([]byte, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1206,7 +1206,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 49. docs(stellar): add a runnable example for DecodeAddress
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeAddress` is exported from `internal/stellar` at internal/stellar/xdr.go:261 (`func DecodeAddress(v xdr.ScVal) (string, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1231,7 +1231,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 50. docs(stellar): add a runnable example for DecodeBool
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeBool` is exported from `internal/stellar` at internal/stellar/xdr.go:177 (`func DecodeBool(v xdr.ScVal) (bool, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1256,7 +1256,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 51. docs(stellar): add a runnable example for DecodeBytes
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeBytes` is exported from `internal/stellar` at internal/stellar/xdr.go:236 (`func DecodeBytes(v xdr.ScVal) ([]byte, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1281,7 +1281,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 52. docs(stellar): add a runnable example for DecodeChannelCloseEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeChannelCloseEvent` is exported from `internal/stellar` at internal/stellar/events.go:335 (`func DecodeChannelCloseEvent(valueB64 string) (*ChannelCloseEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1306,7 +1306,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 53. docs(stellar): add a runnable example for DecodeChannelOpenEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeChannelOpenEvent` is exported from `internal/stellar` at internal/stellar/events.go:287 (`func DecodeChannelOpenEvent(valueB64 string) (*ChannelOpenEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1331,7 +1331,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 54. docs(stellar): add a runnable example for DecodeChannelRefundEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeChannelRefundEvent` is exported from `internal/stellar` at internal/stellar/events.go:381 (`func DecodeChannelRefundEvent(valueB64 string) (*ChannelRefundEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1356,7 +1356,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 55. docs(stellar): add a runnable example for DecodeChannelWithdrawEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeChannelWithdrawEvent` is exported from `internal/stellar` at internal/stellar/events.go:356 (`func DecodeChannelWithdrawEvent(valueB64 string) (*ChannelWithdrawEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1381,7 +1381,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 56. docs(stellar): add a runnable example for DecodeI128
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeI128` is exported from `internal/stellar` at internal/stellar/xdr.go:218 (`func DecodeI128(v xdr.ScVal) (*big.Int, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1406,7 +1406,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 57. docs(stellar): add a runnable example for DecodeI32
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeI32` is exported from `internal/stellar` at internal/stellar/xdr.go:193 (`func DecodeI32(v xdr.ScVal) (int32, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1431,7 +1431,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 58. docs(stellar): add a runnable example for DecodeI64
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeI64` is exported from `internal/stellar` at internal/stellar/xdr.go:209 (`func DecodeI64(v xdr.ScVal) (int64, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1456,7 +1456,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 59. docs(stellar): add a runnable example for DecodeMap
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeMap` is exported from `internal/stellar` at internal/stellar/xdr.go:295 (`func DecodeMap(v xdr.ScVal) (map[string]xdr.ScVal, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1481,7 +1481,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 60. docs(stellar): add a runnable example for DecodePriceBookPublishEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodePriceBookPublishEvent` is exported from `internal/stellar` at internal/stellar/events.go:98 (`func DecodePriceBookPublishEvent(valueB64 string) (*PriceBookPublishEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1506,7 +1506,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 61. docs(stellar): add a runnable example for DecodeStatementAnchorEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeStatementAnchorEvent` is exported from `internal/stellar` at internal/stellar/events.go:142 (`func DecodeStatementAnchorEvent(valueB64 string) (*StatementAnchorEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1531,7 +1531,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 62. docs(stellar): add a runnable example for DecodeStatementDisputeEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeStatementDisputeEvent` is exported from `internal/stellar` at internal/stellar/events.go:197 (`func DecodeStatementDisputeEvent(valueB64 string) (*StatementDisputeEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1556,7 +1556,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 63. docs(stellar): add a runnable example for DecodeStatementResolveEvent
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeStatementResolveEvent` is exported from `internal/stellar` at internal/stellar/events.go:239 (`func DecodeStatementResolveEvent(valueB64 string) (*StatementResolveEvent, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1581,7 +1581,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 64. docs(stellar): add a runnable example for DecodeString
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeString` is exported from `internal/stellar` at internal/stellar/xdr.go:252 (`func DecodeString(v xdr.ScVal) (string, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1606,7 +1606,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 65. docs(stellar): add a runnable example for DecodeSymbol
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeSymbol` is exported from `internal/stellar` at internal/stellar/xdr.go:244 (`func DecodeSymbol(v xdr.ScVal) (string, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1631,7 +1631,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 66. docs(stellar): add a runnable example for DecodeU32
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeU32` is exported from `internal/stellar` at internal/stellar/xdr.go:185 (`func DecodeU32(v xdr.ScVal) (uint32, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1656,7 +1656,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 67. docs(stellar): add a runnable example for DecodeU64
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeU64` is exported from `internal/stellar` at internal/stellar/xdr.go:201 (`func DecodeU64(v xdr.ScVal) (uint64, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1681,7 +1681,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 68. docs(stellar): add a runnable example for DecodeVec
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `DecodeVec` is exported from `internal/stellar` at internal/stellar/xdr.go:284 (`func DecodeVec(v xdr.ScVal) ([]xdr.ScVal, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1706,7 +1706,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 69. docs(stellar): add a runnable example for ErrSimulationFailed.Error
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ErrSimulationFailed.Error` is exported from `internal/stellar` at internal/stellar/invoke.go:35 (`func (e *ErrSimulationFailed) Error() string`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1731,7 +1731,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 70. docs(stellar): add a runnable example for ErrTransactionFailed.Error
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ErrTransactionFailed.Error` is exported from `internal/stellar` at internal/stellar/invoke.go:46 (`func (e *ErrTransactionFailed) Error() string`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1756,7 +1756,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 71. docs(stellar): add a runnable example for ErrWrongScValType.Error
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ErrWrongScValType.Error` is exported from `internal/stellar` at internal/stellar/xdr.go:25 (`func (e *ErrWrongScValType) Error() string`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1781,7 +1781,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 72. docs(stellar): add a runnable example for InvokeAndSubmitWithAuth
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `InvokeAndSubmitWithAuth` is exported from `internal/stellar` at internal/stellar/invoke.go:129 (`func InvokeAndSubmitWithAuth(`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1806,7 +1806,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 73. docs(stellar): add a runnable example for MapEntry
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `MapEntry` is exported from `internal/stellar` at internal/stellar/xdr.go:161 (`func MapEntry(key string, val xdr.ScVal) xdr.ScMapEntry`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1831,7 +1831,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 74. docs(stellar): add a runnable example for MapField
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `MapField` is exported from `internal/stellar` at internal/stellar/xdr.go:314 (`func MapField(m map[string]xdr.ScVal, key string) (xdr.ScVal, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1856,7 +1856,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 75. docs(stellar): add a runnable example for MarshalScValBase64
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `MarshalScValBase64` is exported from `internal/stellar` at internal/stellar/xdr.go:326 (`func MarshalScValBase64(v xdr.ScVal) (string, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1881,7 +1881,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 76. docs(stellar): add a runnable example for MatchesTopic
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `MatchesTopic` is exported from `internal/stellar` at internal/stellar/events.go:48 (`func MatchesTopic(topicB64 []string, want ...string) (bool, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1906,7 +1906,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 77. docs(stellar): add a runnable example for RPCError.Error
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `RPCError.Error` is exported from `internal/stellar` at internal/stellar/rpc.go:72 (`func (e *RPCError) Error() string`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1931,7 +1931,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 78. docs(stellar): add a runnable example for ResolveDisputeArgs
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ResolveDisputeArgs` is exported from `internal/stellar` at internal/stellar/registry.go:202 (`func ResolveDisputeArgs(operator string, seq uint64, resolutionHash [32]byte, amountCredited *big.Int) ([]xdr.ScVal, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1956,7 +1956,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 79. docs(stellar): add a runnable example for ScvAddress
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvAddress` is exported from `internal/stellar` at internal/stellar/xdr.go:115 (`func ScvAddress(address string) (xdr.ScVal, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -1981,7 +1981,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 80. docs(stellar): add a runnable example for ScvBool
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvBool` is exported from `internal/stellar` at internal/stellar/xdr.go:32 (`func ScvBool(b bool) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2006,7 +2006,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 81. docs(stellar): add a runnable example for ScvBytes
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvBytes` is exported from `internal/stellar` at internal/stellar/xdr.go:67 (`func ScvBytes(b []byte) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2031,7 +2031,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 82. docs(stellar): add a runnable example for ScvI128
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvI128` is exported from `internal/stellar` at internal/stellar/xdr.go:88 (`func ScvI128(v *big.Int) (xdr.ScVal, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2056,7 +2056,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 83. docs(stellar): add a runnable example for ScvI32
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvI32` is exported from `internal/stellar` at internal/stellar/xdr.go:48 (`func ScvI32(v int32) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2081,7 +2081,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 84. docs(stellar): add a runnable example for ScvI64
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvI64` is exported from `internal/stellar` at internal/stellar/xdr.go:60 (`func ScvI64(v int64) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2106,7 +2106,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 85. docs(stellar): add a runnable example for ScvMap
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvMap` is exported from `internal/stellar` at internal/stellar/xdr.go:168 (`func ScvMap(entries []xdr.ScMapEntry) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2131,7 +2131,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 86. docs(stellar): add a runnable example for ScvString
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvString` is exported from `internal/stellar` at internal/stellar/xdr.go:80 (`func ScvString(s string) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2156,7 +2156,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 87. docs(stellar): add a runnable example for ScvSymbol
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvSymbol` is exported from `internal/stellar` at internal/stellar/xdr.go:74 (`func ScvSymbol(s string) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2181,7 +2181,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 88. docs(stellar): add a runnable example for ScvU32
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvU32` is exported from `internal/stellar` at internal/stellar/xdr.go:42 (`func ScvU32(v uint32) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2206,7 +2206,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 89. docs(stellar): add a runnable example for ScvU64
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvU64` is exported from `internal/stellar` at internal/stellar/xdr.go:54 (`func ScvU64(v uint64) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2231,7 +2231,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 90. docs(stellar): add a runnable example for ScvVec
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvVec` is exported from `internal/stellar` at internal/stellar/xdr.go:152 (`func ScvVec(items []xdr.ScVal) xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2256,7 +2256,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 91. docs(stellar): add a runnable example for ScvVoid
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `ScvVoid` is exported from `internal/stellar` at internal/stellar/xdr.go:37 (`func ScvVoid() xdr.ScVal`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2281,7 +2281,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 92. docs(stellar): add a runnable example for StatementRegistry.Anchor
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `StatementRegistry.Anchor` is exported from `internal/stellar` at internal/stellar/registry.go:91 (`func (r *StatementRegistry) Anchor(`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2306,7 +2306,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 93. docs(stellar): add a runnable example for StatementRegistry.ResolveDispute
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `StatementRegistry.ResolveDispute` is exported from `internal/stellar` at internal/stellar/registry.go:242 (`func (r *StatementRegistry) ResolveDispute(`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2331,7 +2331,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 94. docs(stellar): add a runnable example for UnmarshalScValBase64
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `UnmarshalScValBase64` is exported from `internal/stellar` at internal/stellar/xdr.go:335 (`func UnmarshalScValBase64(s string) (xdr.ScVal, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2356,7 +2356,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 95. docs(store): add a runnable example for Migrations
 
-`complexity: low` · 100 points · area `store` · `good first issue`
+`complexity: low` · 165 points · area `store` · `good first issue`
 
 **What's wrong.** `Migrations` is exported from `internal/store` at internal/store/migrations_fs.go:18 (`func Migrations() ([]Migration, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is deterministic, so the example can assert its exact output and will fail the build the moment the behaviour changes — which is what makes an example worth more here than another line of prose.
 
@@ -2381,7 +2381,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 96. docs(config): add a runnable example for Load
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Load` is exported from `internal/config` at internal/config/config.go:143 (`func Load(lookup Lookup) (*Config, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2406,7 +2406,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 97. docs(config): add a runnable example for LoadEnv
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `LoadEnv` is exported from `internal/config` at internal/config/config.go:122 (`func LoadEnv() (*Config, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2431,7 +2431,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 98. docs(custody): add a runnable example for NewStore
 
-`complexity: low` · 100 points · area `custody` · `good first issue`
+`complexity: low` · 165 points · area `custody` · `good first issue`
 
 **What's wrong.** `NewStore` is exported from `internal/custody` at internal/custody/store.go:76 (`func NewStore(pool *pgxpool.Pool) *Store`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2456,7 +2456,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 99. docs(httpapi): add a runnable example for RequestInfo.Validate
 
-`complexity: low` · 100 points · area `httpapi` · `good first issue`
+`complexity: low` · 165 points · area `httpapi` · `good first issue`
 
 **What's wrong.** `RequestInfo.Validate` is exported from `internal/httpapi` at internal/httpapi/metering.go:80 (`func (info RequestInfo) Validate() error`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2481,7 +2481,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 100. docs(indexer): add a runnable example for New
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `New` is exported from `internal/indexer` at internal/indexer/ingest.go:136 (`func New(cfg Config) (*Ingestor, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2506,7 +2506,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 101. docs(indexer): add a runnable example for NewReconciler
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `NewReconciler` is exported from `internal/indexer` at internal/indexer/reconcile.go:61 (`func NewReconciler(pool *pgxpool.Pool) *Reconciler`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2531,7 +2531,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 102. docs(meter): add a runnable example for NewAnchorer
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `NewAnchorer` is exported from `internal/meter` at internal/meter/anchor.go:97 (`func NewAnchorer(pool *pgxpool.Pool) *Anchorer`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2556,7 +2556,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 103. docs(meter): add a runnable example for NewCatalog
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `NewCatalog` is exported from `internal/meter` at internal/meter/pricing.go:55 (`func NewCatalog(entries ...CatalogVersion) (*Catalog, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2581,7 +2581,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 104. docs(meter): add a runnable example for NewPeriodCloser
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `NewPeriodCloser` is exported from `internal/meter` at internal/meter/period.go:47 (`func NewPeriodCloser(pool *pgxpool.Pool) *PeriodCloser`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2606,7 +2606,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 105. docs(meter): add a runnable example for NewPricer
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `NewPricer` is exported from `internal/meter` at internal/meter/pricing.go:139 (`func NewPricer(catalog *Catalog) *Pricer`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2631,7 +2631,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 106. docs(meter): add a runnable example for ParseSchedule
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `ParseSchedule` is exported from `internal/meter` at internal/meter/schedule.go:81 (`func ParseSchedule(raw []byte) (*Schedule, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2656,7 +2656,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 107. docs(settle): add a runnable example for NewCalculator
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `NewCalculator` is exported from `internal/settle` at internal/settle/exposure.go:66 (`func NewCalculator(pool *pgxpool.Pool) *Calculator`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2681,7 +2681,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 108. docs(settle): add a runnable example for NewDaemon
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `NewDaemon` is exported from `internal/settle` at internal/settle/daemon.go:72 (`func NewDaemon(pool *pgxpool.Pool, calc *Calculator, submitter *Submitter, channelFactory ChannelFactory, signer *keypair.Full, ledgers LedgerSource, policy Policy) *Daemon`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2706,7 +2706,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 109. docs(settle): add a runnable example for NewMetrics
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `NewMetrics` is exported from `internal/settle` at internal/settle/metrics.go:41 (`func NewMetrics(pool *pgxpool.Pool, ledgers LedgerSource, daemon *Daemon) *Metrics`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2731,7 +2731,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 110. docs(settle): add a runnable example for NewSubmitter
 
-`complexity: low` · 100 points · area `settle` · `good first issue`
+`complexity: low` · 165 points · area `settle` · `good first issue`
 
 **What's wrong.** `NewSubmitter` is exported from `internal/settle` at internal/settle/submit.go:69 (`func NewSubmitter(pool *pgxpool.Pool) *Submitter`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2756,7 +2756,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 111. docs(stellar): add a runnable example for NewChannel
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `NewChannel` is exported from `internal/stellar` at internal/stellar/channel.go:56 (`func NewChannel(client *Client, contractID, networkPassphrase string) *Channel`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2781,7 +2781,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 112. docs(stellar): add a runnable example for NewClient
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `NewClient` is exported from `internal/stellar` at internal/stellar/rpc.go:37 (`func NewClient(url string, httpClient *http.Client) *Client`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2806,7 +2806,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 113. docs(stellar): add a runnable example for NewPriceBook
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `NewPriceBook` is exported from `internal/stellar` at internal/stellar/pricebook.go:49 (`func NewPriceBook(client *Client, contractID, networkPassphrase string) *PriceBook`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2831,7 +2831,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 114. docs(stellar): add a runnable example for NewStatementRegistry
 
-`complexity: low` · 100 points · area `stellar` · `good first issue`
+`complexity: low` · 165 points · area `stellar` · `good first issue`
 
 **What's wrong.** `NewStatementRegistry` is exported from `internal/stellar` at internal/stellar/registry.go:85 (`func NewStatementRegistry(client *Client, contractID, networkPassphrase string) *StatementRegistry`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2856,7 +2856,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 115. docs(store): add a runnable example for NewRequestStore
 
-`complexity: low` · 100 points · area `store` · `good first issue`
+`complexity: low` · 165 points · area `store` · `good first issue`
 
 **What's wrong.** `NewRequestStore` is exported from `internal/store` at internal/store/requests.go:23 (`func NewRequestStore(pool *pgxpool.Pool) *RequestStore`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2881,7 +2881,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 116. docs(store): add a runnable example for ParseMigrations
 
-`complexity: low` · 100 points · area `store` · `good first issue`
+`complexity: low` · 165 points · area `store` · `good first issue`
 
 **What's wrong.** `ParseMigrations` is exported from `internal/store` at internal/store/migrate.go:39 (`func ParseMigrations(fsys fs.FS) ([]Migration, error)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is a parse or construction entry point, so the valuable half of the example is the rejection: showing which sentinel a malformed input produces documents the contract far better than the signature does.
 
@@ -2906,7 +2906,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 117. docs(config): add a runnable example for Config
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Config` is exported from `internal/config` at internal/config/config.go:58 (`type Config struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -2931,7 +2931,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 118. docs(config): add a runnable example for Lookup
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Lookup` is exported from `internal/config` at internal/config/config.go:119 (`type Lookup func(key string) (string, bool)`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -2956,7 +2956,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 119. docs(config): add a runnable example for Secret
 
-`complexity: low` · 100 points · area `config` · `good first issue`
+`complexity: low` · 165 points · area `config` · `good first issue`
 
 **What's wrong.** `Secret` is exported from `internal/config` at internal/config/secret.go:8 (`type Secret string`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -2981,7 +2981,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 120. docs(custody): add a runnable example for ChannelReader
 
-`complexity: low` · 100 points · area `custody` · `good first issue`
+`complexity: low` · 165 points · area `custody` · `good first issue`
 
 **What's wrong.** `ChannelReader` is exported from `internal/custody` at internal/custody/verify.go:34 (`type ChannelReader interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3006,7 +3006,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 121. docs(custody): add a runnable example for Record
 
-`complexity: low` · 100 points · area `custody` · `good first issue`
+`complexity: low` · 165 points · area `custody` · `good first issue`
 
 **What's wrong.** `Record` is exported from `internal/custody` at internal/custody/store.go:56 (`type Record struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3031,7 +3031,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 122. docs(custody): add a runnable example for Store
 
-`complexity: low` · 100 points · area `custody` · `good first issue`
+`complexity: low` · 165 points · area `custody` · `good first issue`
 
 **What's wrong.** `Store` is exported from `internal/custody` at internal/custody/store.go:71 (`type Store struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3056,7 +3056,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 123. docs(custody): add a runnable example for SubmittedCommitment
 
-`complexity: low` · 100 points · area `custody` · `good first issue`
+`complexity: low` · 165 points · area `custody` · `good first issue`
 
 **What's wrong.** `SubmittedCommitment` is exported from `internal/custody` at internal/custody/store.go:40 (`type SubmittedCommitment struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3081,7 +3081,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 124. docs(httpapi): add a runnable example for Config
 
-`complexity: low` · 100 points · area `httpapi` · `good first issue`
+`complexity: low` · 165 points · area `httpapi` · `good first issue`
 
 **What's wrong.** `Config` is exported from `internal/httpapi` at internal/httpapi/metering.go:114 (`type Config struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3106,7 +3106,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 125. docs(httpapi): add a runnable example for LedgerSource
 
-`complexity: low` · 100 points · area `httpapi` · `good first issue`
+`complexity: low` · 165 points · area `httpapi` · `good first issue`
 
 **What's wrong.** `LedgerSource` is exported from `internal/httpapi` at internal/httpapi/metering.go:36 (`type LedgerSource interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3131,7 +3131,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 126. docs(httpapi): add a runnable example for RecordedRequest
 
-`complexity: low` · 100 points · area `httpapi` · `good first issue`
+`complexity: low` · 165 points · area `httpapi` · `good first issue`
 
 **What's wrong.** `RecordedRequest` is exported from `internal/httpapi` at internal/httpapi/metering.go:49 (`type RecordedRequest struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3156,7 +3156,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 127. docs(httpapi): add a runnable example for Recorder
 
-`complexity: low` · 100 points · area `httpapi` · `good first issue`
+`complexity: low` · 165 points · area `httpapi` · `good first issue`
 
 **What's wrong.** `Recorder` is exported from `internal/httpapi` at internal/httpapi/metering.go:43 (`type Recorder interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3181,7 +3181,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 128. docs(httpapi): add a runnable example for RequestInfo
 
-`complexity: low` · 100 points · area `httpapi` · `good first issue`
+`complexity: low` · 165 points · area `httpapi` · `good first issue`
 
 **What's wrong.** `RequestInfo` is exported from `internal/httpapi` at internal/httpapi/metering.go:68 (`type RequestInfo struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3206,7 +3206,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 129. docs(indexer): add a runnable example for Config
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `Config` is exported from `internal/indexer` at internal/indexer/ingest.go:80 (`type Config struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3231,7 +3231,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 130. docs(indexer): add a runnable example for EventsSource
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `EventsSource` is exported from `internal/indexer` at internal/indexer/ingest.go:70 (`type EventsSource interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3256,7 +3256,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 131. docs(indexer): add a runnable example for Ingestor
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `Ingestor` is exported from `internal/indexer` at internal/indexer/ingest.go:122 (`type Ingestor struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3281,7 +3281,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 132. docs(indexer): add a runnable example for Kind
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `Kind` is exported from `internal/indexer` at internal/indexer/ingest.go:45 (`type Kind string`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3306,7 +3306,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 133. docs(indexer): add a runnable example for Reconciler
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `Reconciler` is exported from `internal/indexer` at internal/indexer/reconcile.go:56 (`type Reconciler struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3331,7 +3331,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 134. docs(indexer): add a runnable example for Result
 
-`complexity: low` · 100 points · area `indexer` · `good first issue`
+`complexity: low` · 165 points · area `indexer` · `good first issue`
 
 **What's wrong.** `Result` is exported from `internal/indexer` at internal/indexer/reconcile.go:41 (`type Result struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3356,7 +3356,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 135. docs(merkle): add a runnable example for Proof
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `Proof` is exported from `internal/merkle` at internal/merkle/tree.go:21 (`type Proof [][32]byte`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3381,7 +3381,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 136. docs(merkle): add a runnable example for Record
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `Record` is exported from `internal/merkle` at internal/merkle/leaf.go:26 (`type Record struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3406,7 +3406,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 137. docs(merkle): add a runnable example for Tree
 
-`complexity: low` · 100 points · area `merkle` · `good first issue`
+`complexity: low` · 165 points · area `merkle` · `good first issue`
 
 **What's wrong.** `Tree` is exported from `internal/merkle` at internal/merkle/tree.go:29 (`type Tree struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3431,7 +3431,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 138. docs(meter): add a runnable example for AnchorResult
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `AnchorResult` is exported from `internal/meter` at internal/meter/anchor.go:328 (`type AnchorResult struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3456,7 +3456,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 139. docs(meter): add a runnable example for AnchorSubmitter
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `AnchorSubmitter` is exported from `internal/meter` at internal/meter/anchor.go:73 (`type AnchorSubmitter interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3481,7 +3481,7 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 
 ## 140. docs(meter): add a runnable example for Anchorer
 
-`complexity: low` · 100 points · area `meter` · `good first issue`
+`complexity: low` · 165 points · area `meter` · `good first issue`
 
 **What's wrong.** `Anchorer` is exported from `internal/meter` at internal/meter/anchor.go:92 (`type Anchorer struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
 
@@ -3501,6 +3501,131 @@ Complexity uses this repository's existing `complexity: low|medium|high` labels 
 - An example whose `// Output:` comment does not match is a build failure. That is the point — do not delete the comment to make it pass.
 
 **Entry point:** `internal/meter/anchor.go`
+
+---
+
+## 141. docs(meter): add a runnable example for Catalog
+
+`complexity: low` · 165 points · area `meter` · `good first issue`
+
+**What's wrong.** `Catalog` is exported from `internal/meter` at internal/meter/pricing.go:47 (`type Catalog struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
+
+**Proposed fix.** Add `ExampleCatalog` for `Catalog` (internal/meter/pricing.go:47), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.
+
+**Acceptance criteria**
+
+1. `ExampleCatalog` exists in `internal/meter/pricing_test.go` and constructs the type the way a caller would
+2. The example sets every field a caller is required to set, and leaves the ones the package fills in alone
+3. The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted
+4. `go test ./internal/meter/...` passes
+
+**Guidance**
+
+- The declaration is at internal/meter/pricing.go:47 — read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.
+- `internal/meter/pricing_test.go` already tests this file — add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.
+- An example whose `// Output:` comment does not match is a build failure. That is the point — do not delete the comment to make it pass.
+
+**Entry point:** `internal/meter/pricing.go`
+
+---
+
+## 142. docs(meter): add a runnable example for CatalogSource
+
+`complexity: low` · 165 points · area `meter` · `good first issue`
+
+**What's wrong.** `CatalogSource` is exported from `internal/meter` at internal/meter/period.go:225 (`type CatalogSource interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
+
+**Proposed fix.** Add `ExampleCatalogSource` for `CatalogSource` (internal/meter/period.go:225), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.
+
+**Acceptance criteria**
+
+1. `ExampleCatalogSource` exists in `internal/meter/period_test.go` and constructs the type the way a caller would
+2. The example sets every field a caller is required to set, and leaves the ones the package fills in alone
+3. The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted
+4. `go test ./internal/meter/...` passes
+
+**Guidance**
+
+- The declaration is at internal/meter/period.go:225 — read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.
+- `internal/meter/period_test.go` already tests this file — add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.
+- An example whose `// Output:` comment does not match is a build failure. That is the point — do not delete the comment to make it pass.
+
+**Entry point:** `internal/meter/period.go`
+
+---
+
+## 143. docs(meter): add a runnable example for CatalogVersion
+
+`complexity: low` · 165 points · area `meter` · `good first issue`
+
+**What's wrong.** `CatalogVersion` is exported from `internal/meter` at internal/meter/pricing.go:36 (`type CatalogVersion struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
+
+**Proposed fix.** Add `ExampleCatalogVersion` for `CatalogVersion` (internal/meter/pricing.go:36), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.
+
+**Acceptance criteria**
+
+1. `ExampleCatalogVersion` exists in `internal/meter/pricing_test.go` and constructs the type the way a caller would
+2. The example sets every field a caller is required to set, and leaves the ones the package fills in alone
+3. The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted
+4. `go test ./internal/meter/...` passes
+
+**Guidance**
+
+- The declaration is at internal/meter/pricing.go:36 — read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.
+- `internal/meter/pricing_test.go` already tests this file — add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.
+- An example whose `// Output:` comment does not match is a build failure. That is the point — do not delete the comment to make it pass.
+
+**Entry point:** `internal/meter/pricing.go`
+
+---
+
+## 144. docs(meter): add a runnable example for LedgerSource
+
+`complexity: low` · 165 points · area `meter` · `good first issue`
+
+**What's wrong.** `LedgerSource` is exported from `internal/meter` at internal/meter/period.go:234 (`type LedgerSource interface`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
+
+**Proposed fix.** Add `ExampleLedgerSource` for `LedgerSource` (internal/meter/period.go:234), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.
+
+**Acceptance criteria**
+
+1. `ExampleLedgerSource` exists in `internal/meter/period_test.go` and constructs the type the way a caller would
+2. The example sets every field a caller is required to set, and leaves the ones the package fills in alone
+3. The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted
+4. `go test ./internal/meter/...` passes
+
+**Guidance**
+
+- The declaration is at internal/meter/period.go:234 — read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.
+- `internal/meter/period_test.go` already tests this file — add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.
+- An example whose `// Output:` comment does not match is a build failure. That is the point — do not delete the comment to make it pass.
+
+**Entry point:** `internal/meter/period.go`
+
+---
+
+## 145. docs(meter): add a runnable example for Period
+
+`complexity: low` · 165 points · area `meter` · `good first issue`
+
+**What's wrong.** `Period` is exported from `internal/meter` at internal/meter/period.go:27 (`type Period struct`) and has no example. The repository has **zero** `Example` functions across all 239 exported identifiers, so `go doc` shows signatures and prose but never one executable call. It is an exported type with no example, so nothing in the package documentation shows which fields a caller is expected to set versus which the package fills in. That is exactly the question an example answers and a doc comment usually does not.
+
+**Proposed fix.** Add `ExamplePeriod` for `Period` (internal/meter/period.go:27), which constructs it and uses it the way a caller actually would, so the difference between the zero value and a properly-constructed one is visible.
+
+**Acceptance criteria**
+
+1. `ExamplePeriod` exists in `internal/meter/period_test.go` and constructs the type the way a caller would
+2. The example sets every field a caller is required to set, and leaves the ones the package fills in alone
+3. The example either asserts an `// Output:` comment, or carries a comment saying why output is not asserted
+4. `go test ./internal/meter/...` passes
+
+**Guidance**
+
+- The declaration is at internal/meter/period.go:27 — read its doc comment first. This repository uses doc comments to record design decisions, and the example should agree with what is there rather than restate it.
+- `internal/meter/period_test.go` already tests this file — add the example there, or in a sibling `example_test.go` in the same package. `go test` only runs `Example*` functions that live alongside the package's other tests.
+- An example whose `// Output:` comment does not match is a build failure. That is the point — do not delete the comment to make it pass.
+
+**Entry point:** `internal/meter/period.go`
 
 ---
 

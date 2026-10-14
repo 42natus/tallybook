@@ -17,7 +17,7 @@ would lose them. --check is what CI and review should run.
 import json, os, re, sys, collections
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TARGET_COUNT = 118
+TARGET_COUNT = 123
 
 
 def scan_exported():

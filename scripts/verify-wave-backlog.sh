@@ -9,7 +9,10 @@ chk() { if [ "$2" = "$3" ]; then echo "  PASS  $1 ($2)"; else echo "  FAIL  $1: 
 echo "=== 1. counts per complexity tier and exact point total ==="
 python3 - "$BACKLOG" <<'PY'
 import json, sys, collections
-P = {"high": 200, "medium": 150, "low": 100}
+import importlib.util as _u
+_s = _u.spec_from_file_location("g", "scripts/gen-wave-backlog.py")
+_g = _u.module_from_spec(_s); _s.loader.exec_module(_g)
+P = _g.POINTS  # single source of truth for the ladder
 iss = json.load(open(sys.argv[1]))
 t = collections.Counter(i["complexity"] for i in iss)
 for tier in ("high", "medium", "low"):
@@ -23,15 +26,31 @@ dupes=$(jq -r '.[].title' "$BACKLOG" | sort | uniq -d | wc -l | tr -d ' ')
 chk "duplicate titles inside backlog" "$dupes" "0"
 
 echo
-echo "=== 3. zero intersection with existing issue titles (both repos) ==="
+echo "=== 3. reconciliation against live issues ==="
+# This backlog's issues may already be filed. A collision with an issue we
+# filed from THIS backlog is expected; a collision with anything older is not.
+# WAVE_FIRST_ISSUE is the first issue number this wave created.
+WAVE_FIRST_ISSUE="${WAVE_FIRST_ISSUE:-13}"
 jq -r '.[].title' "$BACKLOG" | sort > /tmp/wave_want.txt
-gh issue list --repo Tallybook-Org/tallybook           --state all --limit 1000 --json title -q '.[].title' > /tmp/wave_live.txt
-gh issue list --repo Tallybook-Org/tallybook-contracts --state all --limit 1000 --json title -q '.[].title' >> /tmp/wave_live.txt
-sort -u /tmp/wave_live.txt -o /tmp/wave_live.txt
-echo "  existing titles across both repos: $(wc -l < /tmp/wave_live.txt | tr -d ' ')"
-overlap=$(comm -12 /tmp/wave_want.txt /tmp/wave_live.txt | wc -l | tr -d ' ')
-chk "titles colliding with an existing issue" "$overlap" "0"
-[ "$overlap" -ne 0 ] && comm -12 /tmp/wave_want.txt /tmp/wave_live.txt
+gh issue list --repo Tallybook-Org/tallybook --state all --limit 1000 \
+   --json number,title -q '.[] | [(.number|tostring), .title] | @tsv' > /tmp/wave_live.tsv
+awk -F'\t' -v k="$WAVE_FIRST_ISSUE" '$1 <  k {print $2}' /tmp/wave_live.tsv | sort > /tmp/wave_older.txt
+awk -F'\t' -v k="$WAVE_FIRST_ISSUE" '$1 >= k {print $2}' /tmp/wave_live.tsv | sort > /tmp/wave_wave.txt
+gh issue list --repo Tallybook-Org/tallybook-contracts --state all --limit 1000 \
+   --json title -q '.[].title' | sort >> /tmp/wave_older.txt
+sort -u /tmp/wave_older.txt -o /tmp/wave_older.txt
+
+filed=$(comm -12 /tmp/wave_want.txt /tmp/wave_wave.txt | wc -l | tr -d ' ')
+pending=$(comm -23 /tmp/wave_want.txt /tmp/wave_wave.txt | wc -l | tr -d ' ')
+orphan=$(comm -13 /tmp/wave_want.txt /tmp/wave_wave.txt | wc -l | tr -d ' ')
+echo "  already filed from this backlog: $filed"
+echo "  in backlog, not yet filed:       $pending"
+if [ "$pending" -gt 0 ]; then comm -23 /tmp/wave_want.txt /tmp/wave_wave.txt | sed 's/^/      + /'; fi
+chk "wave issues on GitHub that are NOT in this backlog" "$orphan" "0"
+[ "$orphan" -ne 0 ] && comm -13 /tmp/wave_want.txt /tmp/wave_wave.txt
+collide=$(comm -12 /tmp/wave_want.txt /tmp/wave_older.txt | wc -l | tr -d ' ')
+chk "titles colliding with a PRE-EXISTING issue" "$collide" "0"
+[ "$collide" -ne 0 ] && comm -12 /tmp/wave_want.txt /tmp/wave_older.txt
 
 echo
 echo "=== 4. required fields present and in range ==="

@@ -10,7 +10,12 @@ if it fails.
 """
 import json, sys, os, collections
 
-POINTS = {"high": 200, "medium": 150, "low": 100}
+# Point values per complexity tier. Set by the project maintainer, whose
+# discretion this is; a 1.7x uniform scale-up of the original 200/150/100,
+# preserving the 2:1.5:1 tier ratio. Points are wave-level accounting and
+# deliberately do NOT appear in rendered issue bodies: repricing the ladder
+# must never require editing an already-filed issue.
+POINTS = {"high": 340, "medium": 255, "low": 165}
 REQUIRED = ("title", "complexity", "area", "description", "why", "criteria", "guidance")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -55,10 +60,10 @@ def body(issue):
     if issue.get("entry_point"):
         out.append(f"\n**Entry point:** `{issue['entry_point']}`")
     out += ["\n---\n",
-            f"*Area: `{issue['area']}` · complexity: `{issue['complexity']}` "
-            f"({POINTS[issue['complexity']]} points). Filed as part of the wave 2 backlog "
-            f"(`docs/WAVE2_BACKLOG.json`); every issue in it cites a file and line verified "
-            f"to exist at the time of filing.*"]
+            f"*Area: `{issue['area']}` · complexity: `{issue['complexity']}`. Filed as part of "
+            f"the wave 2 backlog (`docs/WAVE2_BACKLOG.json`); every issue in it cites a file and "
+            f"line verified to exist at the time of filing. Point values live in the backlog, "
+            f"not here, so the ladder can be repriced without editing filed issues.*"]
     return "\n".join(out)
 
 
