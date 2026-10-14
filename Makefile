@@ -1,4 +1,4 @@
-.PHONY: build test test-ci vet fmt fmt-check staticcheck lint check tidy up down up-all down-all
+.PHONY: build test test-ci vet fmt fmt-check staticcheck lint check tidy up down up-all down-all backlog backlog-verify
 
 GOFILES := $(shell find . -name '*.go' -not -path './vendor/*')
 
@@ -45,3 +45,14 @@ up-all:
 
 down-all:
 	docker compose down
+
+# backlog: regenerate docs/WAVE2_BACKLOG.md from its JSON source of truth.
+# The markdown is never hand-edited; this is the only way it changes.
+backlog:
+	python3 scripts/gen-wave-backlog.py
+
+# backlog-verify: assert tier counts, point total, title uniqueness, no
+# collision with any existing issue, field ranges, and that every file:line
+# cited by every issue still resolves.
+backlog-verify:
+	bash scripts/verify-wave-backlog.sh
