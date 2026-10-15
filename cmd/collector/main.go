@@ -21,6 +21,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -111,7 +112,7 @@ func run(ctx context.Context) error {
 	errCh := make(chan error, 1)
 	go func() {
 		slog.Info("collector: listening", "addr", cfg.CollectorAddr)
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- fmt.Errorf("http server: %w", err)
 		}
 	}()
