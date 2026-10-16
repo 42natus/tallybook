@@ -3,6 +3,8 @@ package stellar
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"log"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -296,6 +298,23 @@ func TestUnmarshalScValBase64_RejectsGarbage(t *testing.T) {
 	if _, err := UnmarshalScValBase64("AAAA"); err == nil {
 		t.Error("UnmarshalScValBase64 returned nil error for valid base64 that isn't a complete ScVal")
 	}
+}
+
+// ExampleUnmarshalScValBase64 decodes "AAAAAwAAACo=" — the exact base64 a
+// Soroban RPC response carries for ScVal::U32(42), and the exact value
+// MarshalScValBase64 returns for ScvU32(42) — then reads it back with
+// DecodeU32, the second half of any real RPC round trip.
+func ExampleUnmarshalScValBase64() {
+	val, err := UnmarshalScValBase64("AAAAAwAAACo=")
+	if err != nil {
+		log.Fatal(err)
+	}
+	n, err := DecodeU32(val)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(n)
+	// Output: 42
 }
 
 // TestDecode_AgainstRealOnChainEvent decodes the exact base64 ScVal blobs

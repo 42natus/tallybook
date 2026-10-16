@@ -3,6 +3,7 @@ package stellar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,33 @@ func fixtureServer(t *testing.T, name string) (*httptest.Server, func() []byte) 
 	}))
 	t.Cleanup(srv.Close)
 	return srv, func() []byte { return lastRequest }
+}
+
+// ExampleNewClient shows one accepted input and one rejected input. NewClient
+// itself never fails — it has no error return and validates nothing at
+// construction — so the rejection half of its contract is enforced on the
+// first call, where the error wraps a sentinel a caller matches with
+// errors.Is rather than a message to compare as a string.
+func ExampleNewClient() {
+	// Accepted input: a well-formed endpoint URL and a nil *http.Client.
+	// NewClient substitutes one bounded by defaultTimeout, observable on
+	// the returned Client from this in-package example. Nothing is dialed
+	// here — constructing is the whole call.
+	c := NewClient("https://soroban-testnet.stellar.org", nil)
+	fmt.Println("accepted: default timeout =", c.httpClient.Timeout)
+
+	// Rejected input: a context that is already cancelled. The first call
+	// refuses it before any request is sent, and the error identifies
+	// itself by wrapping the context.Canceled sentinel — matched with
+	// errors.Is, as CONTRIBUTING requires, never by its string.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := c.GetLatestLedger(ctx)
+	fmt.Println("rejected: errors.Is(err, context.Canceled) =", errors.Is(err, context.Canceled))
+
+	// Output:
+	// accepted: default timeout = 30s
+	// rejected: errors.Is(err, context.Canceled) = true
 }
 
 func TestClient_GetLatestLedger(t *testing.T) {
