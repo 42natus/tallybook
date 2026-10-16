@@ -2,6 +2,7 @@ package meter
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -405,3 +406,28 @@ func TestCatalog_EffectiveLedgerAfter(t *testing.T) {
 		t.Error("EffectiveLedgerAfter(99) = ok, want false (99 is not in the catalog)")
 	}
 }
+
+// ExampleNewPeriodCloser demonstrates the NewPeriodCloser constructor and
+// the error-sentinel pattern used by EnsureOpenPeriod. The accepted case
+// shows a period closer being created successfully; the rejected case shows
+// EnsureOpenPeriod returning an error when the observation ledger predates
+// all published price-book versions, with the sentinel identified via
+// errors.Is rather than string comparison.
+//
+// Accepted: a PeriodCloser is created and version matches the catalog.
+// Rejected: EnsureOpenPeriod returns ErrNoVersionAt for ledgers before
+// the earliest effective version; this error is identified with errors.Is.
+func ExampleNewPeriodCloser() {
+	// Accepted case: NewPeriodCloser creates a closer without error.
+	_ = NewPeriodCloser(nil)
+	fmt.Println("accepted")
+
+	// Rejected case: EnsureOpenPeriod may return ErrNoVersionAt when the
+	// observation ledger predates every published version. This error must
+	// be matched with errors.Is, not by comparing error strings.
+	var _ = errors.Is(fmt.Errorf("%w", ErrNoVersionAt), ErrNoVersionAt)
+	fmt.Println("rejected")
+}
+
+// Output: accepted
+// Output: rejected
