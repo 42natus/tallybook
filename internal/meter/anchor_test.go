@@ -3,6 +3,7 @@ package meter
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -301,4 +302,39 @@ func TestAnchorPeriod_ErrorLeavesPeriodClosedNotAnchored(t *testing.T) {
 	if seq != nil {
 		t.Errorf("statement_seq = %v, want nil", seq)
 	}
+}
+
+// ExampleNewAnchorer shows both halves of NewAnchorer's contract.
+// NewAnchorer itself never fails — it has no error return and stores pool
+// verbatim (see its doc comment) — so the rejection half only exists at the
+// first call that reads through the pool. A cancelled context is refused by
+// the pool's own acquire step before any connection is opened, keeping this
+// example runnable with or without Postgres; the returned error wraps
+// context.Canceled, identified with errors.Is rather than by comparing its
+// message.
+func ExampleNewAnchorer() {
+	// pgxpool.New opens no connection itself — connections are created
+	// lazily on first use — so no database needs to be reachable here.
+	pool, err := pgxpool.New(context.Background(), "postgres://tallybook:tallybook@localhost:5433/tallybook?sslmode=disable")
+	if err != nil {
+		panic(err)
+	}
+	defer pool.Close()
+
+	// Accepted input: a pool to anchor closed periods through.
+	a := NewAnchorer(pool)
+	fmt.Println("accepted:", a != nil)
+
+	// Rejected input: a context that is already cancelled. AnchorPeriod's
+	// first action is to fetch the period through pool, which refuses the
+	// cancelled context before ever connecting; the nil signer and registry
+	// are never reached.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = a.AnchorPeriod(ctx, 1, nil, nil, "", big.NewInt(0))
+	fmt.Println("rejected:", errors.Is(err, context.Canceled))
+
+	// Output:
+	// accepted: true
+	// rejected: true
 }

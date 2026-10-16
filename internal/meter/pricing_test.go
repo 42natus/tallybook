@@ -53,6 +53,31 @@ func TestNewCatalog_RejectsDuplicateEffectiveLedger(t *testing.T) {
 	}
 }
 
+// ExampleNewCatalog shows both halves of NewCatalog's contract: entries are
+// validated up front (non-empty, no entry with a nil Schedule, no two
+// entries sharing a version number or effective ledger), and the rejection
+// wraps the exact sentinel for the failure, so a caller acts on it with
+// errors.Is rather than by comparing the message. Entry order does not
+// matter — NewCatalog sorts by EffectiveLedger internally.
+func ExampleNewCatalog() {
+	schedule, err := ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/x","unit_price":"1"}]}`))
+	if err != nil {
+		panic(err)
+	}
+
+	// Accepted input: one version with a parsed schedule.
+	catalog, err := NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: schedule})
+	fmt.Println("accepted:", err == nil && catalog != nil)
+
+	// Rejected input: an entry with no schedule at all.
+	_, err = NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 1000})
+	fmt.Println("rejected:", errors.Is(err, ErrNilSchedule))
+
+	// Output:
+	// accepted: true
+	// rejected: true
+}
+
 func TestCatalog_VersionAt_PicksTheEffectiveVersion(t *testing.T) {
 	schedV1 := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/x","unit_price":"100"}]}`)
 	schedV2 := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/x","unit_price":"200"}]}`)
