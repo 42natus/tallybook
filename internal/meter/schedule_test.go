@@ -2,6 +2,7 @@ package meter
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 	"strings"
 	"testing"
@@ -191,4 +192,12 @@ func TestParseSchedule_ErrorNamesTheOffendingRule(t *testing.T) {
 	if !strings.Contains(err.Error(), "rule 1") {
 		t.Errorf("error %q does not name rule index 1", err.Error())
 	}
+}
+
+func ExampleScheduleHash() {
+	raw := []byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1000"}]}`)
+	hash := ScheduleHash(raw)
+	fmt.Printf("%x\n", hash)
+	// Output:
+	// a57eb2939c5e1fb0163192975ab3acd02b5bdbbf67e9f535e8abe229649e12fc
 }
