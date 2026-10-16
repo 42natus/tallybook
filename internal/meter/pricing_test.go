@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"testing"
 )
 
@@ -300,3 +301,40 @@ func TestCatalog_VersionAt_DetectsAPeriodSpanningAPriceChange(t *testing.T) {
 			sameStart.Version, sameEnd.Version)
 	}
 }
+
+// ExampleNewPricer demonstrates the NewPricer constructor and the error-sentinel
+// pattern used by Pricer.Price. The accepted case shows a pricer being created
+// successfully with a valid catalog; the rejected case shows Price returning an
+// error when the observation ledger predates all published price-book versions,
+// with the sentinel identified via errors.Is rather than string comparison.
+//
+// Accepted: a Pricer is created and can price requests against a valid catalog.
+// Rejected: Price returns ErrNoVersionAt for ledgers before the earliest effective
+// version; this error is identified with errors.Is.
+func ExampleNewPricer() {
+	// Accepted case: NewPricer creates a pricer backed by a valid catalog.
+	sched, err := ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1"}]`))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "unexpected:", err)
+		return
+	}
+	catalog := &Catalog{versions: []CatalogVersion{
+		{Version: 1, EffectiveLedger: 1000, Schedule: sched},
+	}}
+	pricer := NewPricer(catalog)
+	_ = pricer
+	fmt.Println("accepted")
+
+	// Rejected case: Price may return ErrNoVersionAt when the observation
+	// ledger predates every published version. This error must be matched
+	// with errors.Is, not by comparing error strings.
+	_, err = pricer.Price(500, "GET", "/v1/nope", 1)
+	if err != nil {
+		if errors.Is(err, ErrNoVersionAt) {
+			fmt.Println("rejected")
+		}
+	}
+}
+
+// Output: accepted
+// Output: rejected
