@@ -201,4 +201,3 @@ func ExampleScheduleHash() {
 	// Output:
 	// a57eb2939c5e1fb0163192975ab3acd02b5bdbbf67e9f535e8abe229649e12fc
 }
-
