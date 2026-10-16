@@ -1,6 +1,8 @@
 module github.com/Tallybook-Org/tallybook
 
-go 1.27.1
+go 1.25.0
+
+toolchain go1.26.9
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
@@ -14,6 +16,6 @@ require (
 	github.com/klauspost/compress v1.17.6 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/stellar/go-xdr v0.0.0-20260806060815-dc590f17552a // indirect
-	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/text v0.31.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 )
