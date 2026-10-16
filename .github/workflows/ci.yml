@@ -59,6 +59,14 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
           staticcheck ./...
 
+      - name: govulncheck
+        run: go mod download && go run github.com/projectdiscovery/govulncheck/cmd/govulncheck ./...
+
+      - name: gosec
+        run: |
+          go install github.com/securego/gosec/cmd/gosec@2025.1.1
+          gosec ./...
+
       - name: go build
         run: go build ./...
 
