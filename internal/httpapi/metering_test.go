@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -400,4 +401,81 @@ func TestRequestInfo_Validate(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Example ------------------------------------------------------------
+//
+// LedgerSource is an interface, so a caller "constructs" one by supplying an
+// implementation of its single method rather than by filling in fields: in
+// production that implementation is *internal/stellar.Client (per the doc
+// comment on LedgerSource), and nothing about it is set by this package. The
+// split the example needs to make visible is therefore between what the
+// caller supplies — the ledger sequence and every required Config field — and
+// what the package fills in from there: observed_ledger on the recorded
+// request, the price version selected from it, and the default of one unit
+// per request when Config.UnitCount is left unset.
+
+// exampleLedgerSource is a caller's LedgerSource: a pinned ledger sequence,
+// standing in for *internal/stellar.Client so the example is deterministic.
+type exampleLedgerSource struct {
+	current uint32
+}
+
+func (l exampleLedgerSource) CurrentLedger(context.Context) (uint32, error) {
+	return l.current, nil
+}
+
+// ExampleLedgerSource wires an implementation of LedgerSource into the
+// metering middleware the way a caller would: every field Config requires is
+// set, and Config.UnitCount — the field the package fills in itself — is left
+// alone. It also shows that the interface's zero value (nil) is rejected at
+// wiring time, by name, instead of panicking on the first request.
+func ExampleLedgerSource() {
+	sched, err := meter.ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1000"}]}`))
+	if err != nil {
+		panic(err)
+	}
+	catalog, err := meter.NewCatalog(meter.CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: sched})
+	if err != nil {
+		panic(err)
+	}
+
+	recorder := &fakeRecorder{}
+	cfg := Config{ // the six fields validate requires; UnitCount left for the package's default
+		Operator:     "GDOLCHAOYP63BEHGAUJJS5IVQNUXLPBWCHO2HZRBTZRU52XBMW2TRJLM",
+		Method:       "GET",
+		PathTemplate: "/v1/items",
+		Pricer:       meter.NewPricer(catalog),
+		Ledger:       exampleLedgerSource{current: 1500},
+		Recorder:     recorder,
+	}
+
+	// Zero value: a nil LedgerSource fails wiring, naming the missing
+	// dependency, rather than failing a request later.
+	nilLedger := cfg
+	nilLedger.Ledger = nil
+	if _, err := Middleware(nilLedger); err != nil {
+		fmt.Println(err)
+	}
+
+	// Properly constructed: the middleware runs, and the source's ledger
+	// arrives on the recorded request. Printing here is deliberate — the
+	// // Output: comment below makes go test assert it; examples report on
+	// stdout, where the slog-only rule (production logging) doesn't apply.
+	mw, err := Middleware(cfg)
+	if err != nil {
+		panic(err)
+	}
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
+	req := httptest.NewRequest("GET", "/v1/items", nil)
+	info := RequestInfo{Consumer: "GABC", Protocol: ProtocolX402}
+	req = req.WithContext(WithRequestInfo(req.Context(), info))
+	mw(next).ServeHTTP(httptest.NewRecorder(), req)
+
+	rec := recorder.recorded[0]
+	fmt.Printf("observed_ledger=%d units=%d charged=%s\n", rec.ObservedLedger, rec.UnitCount, rec.ChargedAmount)
+
+	// Output:
+	// httpapi: metering config: ledger source is nil
+	// observed_ledger=1500 units=1 charged=1000
 }
