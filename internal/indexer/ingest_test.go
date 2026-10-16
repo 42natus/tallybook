@@ -185,6 +185,38 @@ func TestNew_Validation(t *testing.T) {
 	}
 }
 
+// ExampleNew shows both halves of New's contract. Per its doc comment,
+// New validates cfg once at startup: a complete Config is accepted as-is,
+// and a malformed one is rejected with an error wrapping ErrInvalidConfig,
+// so a caller identifies the class of failure with errors.Is rather than
+// by comparing its message.
+//
+// The pool is only stored by New, never dialed, so this example passes
+// with or without Postgres running.
+func ExampleNew() {
+	cfg := Config{
+		Client:              &fakeEventsSource{},
+		Pool:                &pgxpool.Pool{},
+		PriceBookID:         testPriceBookID,
+		StatementRegistryID: testRegistryID,
+		OperatorAddress:     testOperator,
+		StartLedger:         testStartLedger,
+	}
+
+	// Accepted input: every required field is set.
+	ix, err := New(cfg)
+	fmt.Println("accepted:", err == nil && ix != nil)
+
+	// Rejected input: the same config with no events source to read from.
+	cfg.Client = nil
+	_, err = New(cfg)
+	fmt.Println("rejected:", errors.Is(err, ErrInvalidConfig))
+
+	// Output:
+	// accepted: true
+	// rejected: true
+}
+
 func TestClassify(t *testing.T) {
 	tests := []struct {
 		name    string
