@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 )
 
 // Metrics serves §6's /metrics endpoint: "Structured slog throughout,
@@ -140,7 +141,7 @@ func (m *Metrics) unsettledExposureByToken(ctx context.Context) (map[string]stri
 		if err := rows.Scan(&token, &unsettled); err != nil {
 			return nil, fmt.Errorf("unsettled exposure by token: scan: %w", err)
 		}
-		amount, err := numericToBigInt(unsettled)
+		amount, err := convert.NumericToBigInt(unsettled)
 		if err != nil {
 			return nil, fmt.Errorf("unsettled exposure by token: %w", err)
 		}
