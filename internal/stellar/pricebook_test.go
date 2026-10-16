@@ -29,12 +29,19 @@ const unpublishedOperator = "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC
 
 const realPriceBookContractID = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
 
+// readFixtureRaw loads a recorded RPC response by fixture name. It takes
+// no *testing.T — unlike loadFixtureRaw — so a doc Example, which cannot
+// receive one, can replay the same recorded responses this file's tests do.
+func readFixtureRaw(name string) ([]byte, error) {
+	path := filepath.Join("..", "..", "testdata", "stellar", name+".json")
+	return os.ReadFile(path)
+}
+
 func loadFixtureRaw(t *testing.T, name string) []byte {
 	t.Helper()
-	path := filepath.Join("..", "..", "testdata", "stellar", name+".json")
-	data, err := os.ReadFile(path)
+	data, err := readFixtureRaw(name)
 	if err != nil {
-		t.Fatalf("read fixture %s: %v", path, err)
+		t.Fatalf("read fixture %s: %v", name, err)
 	}
 	return data
 }

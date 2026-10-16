@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -24,21 +26,27 @@ const (
 	registryConsumer     = "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG"
 )
 
-// sequencedFixtureServer replays fixtures[method] in order for each
-// successive request to that method, repeating the last one once
-// exhausted (the shape polling needs: several NOT_FOUND-equivalent calls
-// then a final settled one — though these fixture sets only include the
-// final response, since that's all these tests assert on).
-func sequencedFixtureServer(t *testing.T, fixtures map[string][]string) *httptest.Server {
-	t.Helper()
+// sequencedFixtureHandler builds the method-routed replay handler:
+// fixtures[method] is replayed in order for each successive request to
+// that method, repeating the last one once exhausted (the shape polling
+// needs: several NOT_FOUND-equivalent calls then a final settled one —
+// though these fixture sets only include the final response, since that's
+// all these tests assert on). It takes no *testing.T — unlike
+// sequencedFixtureServer — so the Example functions below, which cannot
+// receive one, can drive the same recorded responses these tests do.
+func sequencedFixtureHandler(fixtures map[string][]string) (http.Handler, error) {
 	data := make(map[string][][]byte, len(fixtures))
 	for method, names := range fixtures {
 		for _, name := range names {
-			data[method] = append(data[method], loadFixtureRaw(t, name))
+			raw, err := readFixtureRaw(name)
+			if err != nil {
+				return nil, fmt.Errorf("read fixture %s: %w", name, err)
+			}
+			data[method] = append(data[method], raw)
 		}
 	}
 	pos := make(map[string]int, len(fixtures))
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Method string `json:"method"`
 		}
@@ -58,7 +66,18 @@ func sequencedFixtureServer(t *testing.T, fixtures map[string][]string) *httptes
 		pos[req.Method] = i + 1
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(responses[i])
-	}))
+	}), nil
+}
+
+// sequencedFixtureServer wraps sequencedFixtureHandler in an httptest
+// server scoped to the test's lifetime.
+func sequencedFixtureServer(t *testing.T, fixtures map[string][]string) *httptest.Server {
+	t.Helper()
+	handler, err := sequencedFixtureHandler(fixtures)
+	if err != nil {
+		t.Fatalf("build fixture handler: %v", err)
+	}
+	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	return srv
 }
@@ -89,6 +108,60 @@ func TestStatementRegistry_Anchor(t *testing.T) {
 	if hash == "" {
 		t.Error("hash should not be empty")
 	}
+}
+
+// ExampleStatementRegistry_Anchor anchors one statement against an RPC
+// endpoint that replays the responses a real testnet anchor captured (see
+// testdata/stellar/README.md), so seq and tx are the values that call
+// actually produced on chain. A real caller points NewClient at the
+// network's RPC URL instead of an httptest server; nothing else changes.
+func ExampleStatementRegistry_Anchor() {
+	handler, err := sequencedFixtureHandler(map[string][]string{
+		"getLedgerEntries":    {"registry_anchor_getledgerentries"},
+		"simulateTransaction": {"registry_anchor_simulate"},
+		"sendTransaction":     {"registry_anchor_send"},
+		"getTransaction":      {"registry_anchor_gettransaction"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	signer, err := keypair.ParseFull("SAQJHZ3ZUNSHQB2CWYRGD5JKTJW6YDSCGIFOKHAPESG3DCURKQ4ZTZYM")
+	if err != nil {
+		log.Fatal(err)
+	}
+	registry := NewStatementRegistry(
+		NewClient(srv.URL, nil),
+		"CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M",
+		"Test SDF Network ; September 2015",
+	)
+
+	usageRoot := sha256.Sum256([]byte("example usage root"))
+	seq, tx, err := registry.Anchor(
+		context.Background(),
+		signer,
+		"GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG",
+		4612165,
+		4612167,
+		usageRoot,
+		9,
+		"GDOLCHAOYP63BEHGAUJJS5IVQNUXLPBWCHO2HZRBTZRU52XBMW2TRJLM",
+		big.NewInt(3000),
+		big.NewInt(3000),
+		1,
+		ProtocolX402,
+		nil,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("seq=%d\n", seq)
+	fmt.Printf("tx=%s\n", tx)
+	// Output:
+	// seq=3
+	// tx=83806937259d185c694da8e4efd7d8e7e859c8df235f8f77895f244c999068d3
 }
 
 func TestStatementRegistry_GetStatement(t *testing.T) {
