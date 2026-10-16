@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -299,40 +300,21 @@ func TestUnmarshalScValBase64_RejectsGarbage(t *testing.T) {
 	}
 }
 
-// ExampleScvVoid calls ScvVoid and documents its output.
-func ExampleScvVoid() {
-	// Output: ScvVoid()
-	v := ScvVoid()
-	_ = v
-	fmt.Print("ScvVoid()")
-}
-
-// ExampleScvU32 calls ScvU32 with a concrete literal and documents the result.
-func ExampleScvU32() {
-	// Output: ScvU32(42) -> decoded: 42
-	v := ScvU32(42)
-	got, _ := DecodeU32(v)
-	fmt.Printf("ScvU32(42) -> decoded: %d", got)
-	_ = got
-}
-
-// ExampleScvU64 calls ScvU64 with a concrete literal and documents the result.
-func ExampleScvU64() {
-	// Output: ScvU64(42) -> decoded: 42
-	v := ScvU64(42)
-	got, _ := DecodeU64(v)
-	fmt.Printf("ScvU64(42) -> decoded: %d", got)
-	_ = got
-}
-
-// ExampleScvVec calls ScvVec with concrete literals and documents the result.
-func ExampleScvVec() {
-	// Output: ScvVec([ScvU32(1) ScvSymbol("two") ScvBool(true)]) -> decoded: [1 two true]
-	items := []xdr.ScVal{ScvU32(1), ScvSymbol("two"), ScvBool(true)}
-	v := ScvVec(items)
-	got, _ := DecodeVec(v)
-	fmt.Printf("ScvVec([ScvU32(1) ScvSymbol(\"two\") ScvBool(true)]) -> decoded: [1 two true]")
-	_ = got
+// ExampleUnmarshalScValBase64 decodes "AAAAAwAAACo=" — the exact base64 a
+// Soroban RPC response carries for ScVal::U32(42), and the exact value
+// MarshalScValBase64 returns for ScvU32(42) — then reads it back with
+// DecodeU32, the second half of any real RPC round trip.
+func ExampleUnmarshalScValBase64() {
+	val, err := UnmarshalScValBase64("AAAAAwAAACo=")
+	if err != nil {
+		log.Fatal(err)
+	}
+	n, err := DecodeU32(val)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(n)
+	// Output: 42
 }
 
 // TestDecode_AgainstRealOnChainEvent decodes the exact base64 ScVal blobs
