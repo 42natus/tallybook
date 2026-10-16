@@ -100,19 +100,19 @@ type Config struct {
 
 func (cfg Config) validate() error {
 	if cfg.Client == nil {
-		return errors.New("indexer: config: client is nil")
+		return fmt.Errorf("%w: client is nil", ErrInvalidConfig)
 	}
 	if cfg.Pool == nil {
-		return errors.New("indexer: config: pool is nil")
+		return fmt.Errorf("%w: pool is nil", ErrInvalidConfig)
 	}
 	if cfg.PriceBookID == "" {
-		return errors.New("indexer: config: price book id is empty")
+		return fmt.Errorf("%w: price book id is empty", ErrInvalidConfig)
 	}
 	if cfg.StatementRegistryID == "" {
-		return errors.New("indexer: config: statement registry id is empty")
+		return fmt.Errorf("%w: statement registry id is empty", ErrInvalidConfig)
 	}
 	if cfg.OperatorAddress == "" {
-		return errors.New("indexer: config: operator address is empty")
+		return fmt.Errorf("%w: operator address is empty", ErrInvalidConfig)
 	}
 	return nil
 }
@@ -144,6 +144,13 @@ func New(cfg Config) (*Ingestor, error) {
 		startLedger:     cfg.StartLedger, pageLimit: cfg.PageLimit,
 	}, nil
 }
+
+// ErrInvalidConfig is returned by New when cfg is missing a required
+// dependency or field. The wrapped message names the specific field;
+// callers match the class of failure with errors.Is rather than
+// inspecting the message, so the wording of a startup diagnostic stays
+// free to change.
+var ErrInvalidConfig = errors.New("indexer: config is invalid")
 
 // topicPatterns lists every known event kind's exact topic sequence, in
 // the same order classify checks them. Order doesn't affect correctness —
