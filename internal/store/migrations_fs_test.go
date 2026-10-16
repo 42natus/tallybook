@@ -2,8 +2,32 @@ package store
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"testing"
 )
+
+// ExampleMigrations lists every migration embedded in the binary in the
+// order Migrate applies them: sorted by version, not by the order the
+// directory happened to return them. Name is the descriptive suffix from
+// "NNNN_name.sql".
+func ExampleMigrations() {
+	migrations, err := Migrations()
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, m := range migrations {
+		fmt.Printf("%d %s\n", m.Version, m.Name)
+	}
+	// Output:
+	// 1 periods
+	// 2 requests
+	// 3 commitments
+	// 4 channels
+	// 5 chain_events
+	// 6 settlements
+	// 7 anchor_attempts
+}
 
 func TestMigrations_LoadsEmbeddedFiles(t *testing.T) {
 	migrations, err := Migrations()
