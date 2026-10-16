@@ -3,6 +3,7 @@ package stellar
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -296,6 +297,42 @@ func TestUnmarshalScValBase64_RejectsGarbage(t *testing.T) {
 	if _, err := UnmarshalScValBase64("AAAA"); err == nil {
 		t.Error("UnmarshalScValBase64 returned nil error for valid base64 that isn't a complete ScVal")
 	}
+}
+
+// ExampleScvVoid calls ScvVoid and documents its output.
+func ExampleScvVoid() {
+	// Output: ScvVoid()
+	v := ScvVoid()
+	_ = v
+	fmt.Print("ScvVoid()")
+}
+
+// ExampleScvU32 calls ScvU32 with a concrete literal and documents the result.
+func ExampleScvU32() {
+	// Output: ScvU32(42) -> decoded: 42
+	v := ScvU32(42)
+	got, _ := DecodeU32(v)
+	fmt.Printf("ScvU32(42) -> decoded: %d", got)
+	_ = got
+}
+
+// ExampleScvU64 calls ScvU64 with a concrete literal and documents the result.
+func ExampleScvU64() {
+	// Output: ScvU64(42) -> decoded: 42
+	v := ScvU64(42)
+	got, _ := DecodeU64(v)
+	fmt.Printf("ScvU64(42) -> decoded: %d", got)
+	_ = got
+}
+
+// ExampleScvVec calls ScvVec with concrete literals and documents the result.
+func ExampleScvVec() {
+	// Output: ScvVec([ScvU32(1) ScvSymbol("two") ScvBool(true)]) -> decoded: [1 two true]
+	items := []xdr.ScVal{ScvU32(1), ScvSymbol("two"), ScvBool(true)}
+	v := ScvVec(items)
+	got, _ := DecodeVec(v)
+	fmt.Printf("ScvVec([ScvU32(1) ScvSymbol(\"two\") ScvBool(true)]) -> decoded: [1 two true]")
+	_ = got
 }
 
 // TestDecode_AgainstRealOnChainEvent decodes the exact base64 ScVal blobs
