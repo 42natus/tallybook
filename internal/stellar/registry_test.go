@@ -355,3 +355,66 @@ func TestStatementRegistry_ResolveDispute(t *testing.T) {
 		t.Error("hash should not be empty")
 	}
 }
+
+// ExampleStatementRegistry_ResolveDispute resolves a dispute with both the
+// operator's and the consumer's authorization attached — the dual-auth case
+// CLAUDE.md §4 calls out. consumerAuth is built here with
+// AuthorizeInvocation because the consumer's key lives in the consumer's
+// process, not the operator's; in production it arrives out of band. The
+// RPC endpoint replays the two simulateTransaction passes a real testnet
+// resolve_dispute made — the second, with consumerAuth already attached, is
+// what puts the consumer's nonce inside the transaction's resource
+// footprint (see invoke.go).
+func ExampleStatementRegistry_ResolveDispute() {
+	handler, err := sequencedFixtureHandler(map[string][]string{
+		"getLatestLedger":     {"registry_resolve_dispute_getlatestledger"},
+		"getLedgerEntries":    {"registry_resolve_dispute_getledgerentries"},
+		"simulateTransaction": {"registry_resolve_dispute_simulate_pass1", "registry_resolve_dispute_simulate_pass2"},
+		"sendTransaction":     {"registry_resolve_dispute_send"},
+		"getTransaction":      {"registry_resolve_dispute_gettransaction"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	const (
+		contractID = "CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M"
+		passphrase = "Test SDF Network ; September 2015"
+	)
+	client := NewClient(srv.URL, nil)
+	registry := NewStatementRegistry(client, contractID, passphrase)
+
+	operator, err := keypair.ParseFull("SAQJHZ3ZUNSHQB2CWYRGD5JKTJW6YDSCGIFOKHAPESG3DCURKQ4ZTZYM")
+	if err != nil {
+		log.Fatal(err)
+	}
+	consumer, err := keypair.ParseFull("SB4A2UA44VMYI2Z6XZPMLRF4XNYZRFMP2IVUVI6KQP5OEV2RGRXHPLT7")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	latest, err := client.GetLatestLedger(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	resolutionHash := sha256.Sum256([]byte("example resolution hash"))
+	amountCredited := big.NewInt(300)
+	args, err := ResolveDisputeArgs(operator.Address(), 3, resolutionHash, amountCredited)
+	if err != nil {
+		log.Fatal(err)
+	}
+	consumerAuth, err := AuthorizeInvocation(passphrase, consumer, contractID, "resolve_dispute", args, latest.Sequence)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	tx, err := registry.ResolveDispute(context.Background(), operator, 3, resolutionHash, amountCredited, consumerAuth)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("tx=%s\n", tx)
+	// Output:
+	// tx=27b25cf1393f2d5904f606d4b55a71406f47fb3b90a67d067cdb9581eb3f231d
+}
