@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/stellar/go-stellar-sdk/keypair"
+	"github.com/stellar/go-stellar-sdk/strkey"
 )
 
 // realOperator is a real operator address with real published price book
@@ -29,12 +31,19 @@ const unpublishedOperator = "GBRPYHIL2CI3FNQ4BXLFMNDLFJUNPU2HY3ZMFSHONUCEOASW7QC
 
 const realPriceBookContractID = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
 
+// readFixtureRaw loads a recorded RPC response by fixture name. It takes
+// no *testing.T — unlike loadFixtureRaw — so a doc Example, which cannot
+// receive one, can replay the same recorded responses this file's tests do.
+func readFixtureRaw(name string) ([]byte, error) {
+	path := filepath.Join("..", "..", "testdata", "stellar", name+".json")
+	return os.ReadFile(path)
+}
+
 func loadFixtureRaw(t *testing.T, name string) []byte {
 	t.Helper()
-	path := filepath.Join("..", "..", "testdata", "stellar", name+".json")
-	data, err := os.ReadFile(path)
+	data, err := readFixtureRaw(name)
 	if err != nil {
-		t.Fatalf("read fixture %s: %v", path, err)
+		t.Fatalf("read fixture %s: %v", name, err)
 	}
 	return data
 }
@@ -194,4 +203,36 @@ func TestPriceBook_Publish(t *testing.T) {
 	if hash != "9bf5edffad2c4dc70fa82e26b042dfc8b7d704a0054749154bfac064192fe68c" {
 		t.Errorf("hash = %q", hash)
 	}
+}
+
+// ExampleNewPriceBook shows one accepted and one rejected contract ID.
+// NewPriceBook itself never fails — its doc comment promises only a
+// binding, and contractID is stored verbatim — so a malformed ID surfaces
+// its error on the first call that has to decode it, here Latest, before
+// any RPC request is built. The chain back to the caller wraps with %w
+// throughout, so errors.Is identifies the sentinel rather than any message
+// text.
+func ExampleNewPriceBook() {
+	// Never contacted: both paths below finish before a request is built.
+	client := NewClient("https://soroban-testnet.stellar.org", nil)
+
+	// Accepted: the deployed testnet price_book contract's own C... strkey,
+	// stored verbatim alongside the network passphrase.
+	pb := NewPriceBook(client, realPriceBookContractID, "Test SDF Network ; September 2015")
+	fmt.Println(pb.ContractID)
+	fmt.Println(pb.NetworkPassphrase)
+
+	// Rejected: the same strkey with a corrupted version byte — first
+	// character changed C -> D, decoding to version byte 24 where the
+	// contract's is 16, and strkey defines no version byte 24. Construction
+	// still succeeds silently; the first call that needs the contract
+	// address fails with strkey's sentinel.
+	bad := NewPriceBook(client, "D"+realPriceBookContractID[1:], "")
+	_, err := bad.Latest(context.Background(), realOperator)
+	fmt.Println(errors.Is(err, strkey.ErrInvalidVersionByte))
+
+	// Output:
+	// CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW
+	// Test SDF Network ; September 2015
+	// true
 }

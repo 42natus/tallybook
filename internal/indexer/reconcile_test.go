@@ -3,6 +3,7 @@ package indexer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -263,4 +264,38 @@ func TestReconcilePeriod_NoRequestsStillReconciles(t *testing.T) {
 	if !result.BilledMatch || !result.SettledMatch {
 		t.Errorf("BilledMatch=%v SettledMatch=%v, want both true", result.BilledMatch, result.SettledMatch)
 	}
+}
+
+// ExampleNewReconciler shows both halves of NewReconciler's contract.
+// NewReconciler itself never fails — it has no error return and stores
+// pool verbatim (see its doc comment) — so the rejection half only exists
+// at the first call that reads through the pool. A cancelled context is
+// refused by the pool's own acquire step before any connection is opened,
+// keeping this example runnable with or without Postgres; the returned
+// error wraps context.Canceled, identified with errors.Is rather than by
+// comparing its message.
+func ExampleNewReconciler() {
+	// pgxpool.New opens no connection itself — connections are created
+	// lazily on first use — so no database needs to be reachable here.
+	pool, err := pgxpool.New(context.Background(), "postgres://tallybook:tallybook@localhost:5433/tallybook?sslmode=disable")
+	if err != nil {
+		panic(err)
+	}
+	defer pool.Close()
+
+	// Accepted input: a pool to reconcile periods through.
+	r := NewReconciler(pool)
+	fmt.Println("accepted:", r != nil)
+
+	// Rejected input: a context that is already cancelled. ReconcilePeriod's
+	// first action is to read the period through pool, which refuses the
+	// cancelled context before ever connecting.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err = r.ReconcilePeriod(ctx, 1)
+	fmt.Println("rejected:", errors.Is(err, context.Canceled))
+
+	// Output:
+	// accepted: true
+	// rejected: true
 }
