@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 )
@@ -143,4 +144,39 @@ func TestVerifyCommitment_PrepareCommitmentErrorPropagates(t *testing.T) {
 	if !errors.Is(err, boom) {
 		t.Fatalf("error = %v, want it to wrap %v", err, boom)
 	}
+}
+
+// ExampleChannelReader shows how a caller actually uses ChannelReader.
+// The interface itself has no fields to set — it is one method, so what
+// a caller "constructs" is its implementation (*internal/stellar.Channel
+// in production, whose PrepareCommitment runs the live prepare_commitment
+// simulation the doc comment describes) and then passes that to
+// VerifyCommitment. The interface's own zero value is nil, and that is
+// never what a caller passes; the stand-in's caller-supplied field is
+// the message, and everything after the call — argument validation, the
+// ed25519 check, the (false, nil) versus error distinction — is the
+// package filling in its side of the contract.
+func ExampleChannelReader() {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	message := []byte("the exact bytes prepare_commitment would predict")
+	sig := ed25519.Sign(priv, message)
+
+	// Properly constructed: message — the bytes this channel's
+	// prepare_commitment predicts for the amount — is the one field the
+	// caller's side supplies. The stand-in's other fields (err,
+	// messageFor) are left alone; they are failure/variation hooks, not
+	// values a caller configures.
+	channel := fakeChannelReader{message: message}
+	valid, err := VerifyCommitment(context.Background(), channel, pub, big.NewInt(100), sig)
+	fmt.Println("properly constructed:", valid, err)
+
+	// Unwired — the implementation equivalent of a zero value — returns
+	// no message, so verification completes and finds the signature
+	// invalid: (false, nil), a completed outcome, not an error.
+	valid, err = VerifyCommitment(context.Background(), fakeChannelReader{}, pub, big.NewInt(100), sig)
+	fmt.Println("unwired:", valid, err)
+
+	// Output:
+	// properly constructed: true <nil>
+	// unwired: false <nil>
 }

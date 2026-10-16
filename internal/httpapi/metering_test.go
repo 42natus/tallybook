@@ -403,79 +403,92 @@ func TestRequestInfo_Validate(t *testing.T) {
 	}
 }
 
-// --- Example ------------------------------------------------------------
+// ExampleRecorder shows how a caller actually obtains and uses a Recorder.
+// Recorder is an interface (metering.go), so "constructing" one means
+// implementing RecordRequest — internal/store's request-persistence type
+// does this in production — and handing it to Config.Recorder; a config
+// left holding the zero value (nil) is rejected at wiring time instead of
+// silently recording nothing, which is the difference visible below.
 //
-// LedgerSource is an interface, so a caller "constructs" one by supplying an
-// implementation of its single method rather than by filling in fields: in
-// production that implementation is *internal/stellar.Client (per the doc
-// comment on LedgerSource), and nothing about it is set by this package. The
-// split the example needs to make visible is therefore between what the
-// caller supplies — the ledger sequence and every required Config field — and
-// what the package fills in from there: observed_ledger on the recorded
-// request, the price version selected from it, and the default of one unit
-// per request when Config.UnitCount is left unset.
-
-// exampleLedgerSource is a caller's LedgerSource: a pinned ledger sequence,
-// standing in for *internal/stellar.Client so the example is deterministic.
-type exampleLedgerSource struct {
-	current uint32
-}
-
-func (l exampleLedgerSource) CurrentLedger(context.Context) (uint32, error) {
-	return l.current, nil
-}
-
-// ExampleLedgerSource wires an implementation of LedgerSource into the
-// metering middleware the way a caller would: every field Config requires is
-// set, and Config.UnitCount — the field the package fills in itself — is left
-// alone. It also shows that the interface's zero value (nil) is rejected at
-// wiring time, by name, instead of panicking on the first request.
-func ExampleLedgerSource() {
+// The caller sets only the fields it owns: the Config wiring (Operator,
+// Method, PathTemplate, Pricer, Ledger, Recorder) and the request's
+// RequestInfo. UnitCount is left unset so the package's default (one unit
+// per request) fills it in, and every field of the RecordedRequest —
+// request ID, endpoint hash, price version, charged amount, observed
+// ledger — is filled in by the middleware, never by the caller.
+func ExampleRecorder() {
+	// The wiring a caller is required to set, per Config.validate —
+	// everything except the Recorder, which comes last so the zero-value
+	// case below stays visible.
 	sched, err := meter.ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1000"}]}`))
 	if err != nil {
-		panic(err)
+		fmt.Println("parse schedule:", err)
+		return
 	}
 	catalog, err := meter.NewCatalog(meter.CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: sched})
 	if err != nil {
-		panic(err)
+		fmt.Println("new catalog:", err)
+		return
 	}
-
-	recorder := &fakeRecorder{}
-	cfg := Config{ // the six fields validate requires; UnitCount left for the package's default
+	cfg := Config{
 		Operator:     "GDOLCHAOYP63BEHGAUJJS5IVQNUXLPBWCHO2HZRBTZRU52XBMW2TRJLM",
 		Method:       "GET",
 		PathTemplate: "/v1/items",
 		Pricer:       meter.NewPricer(catalog),
-		Ledger:       exampleLedgerSource{current: 1500},
-		Recorder:     recorder,
+		Ledger:       fakeLedgerSource{ledger: 1500},
 	}
 
-	// Zero value: a nil LedgerSource fails wiring, naming the missing
-	// dependency, rather than failing a request later.
-	nilLedger := cfg
-	nilLedger.Ledger = nil
-	if _, err := Middleware(nilLedger); err != nil {
-		fmt.Println(err)
+	// The zero value: no implementation to record with, so wiring fails
+	// fast and names the problem rather than serving requests unmetered.
+	if _, err := Middleware(cfg); err != nil {
+		fmt.Println("zero value rejected:", err)
 	}
 
-	// Properly constructed: the middleware runs, and the source's ledger
-	// arrives on the recorded request. Printing here is deliberate — the
-	// // Output: comment below makes go test assert it; examples report on
-	// stdout, where the slog-only rule (production logging) doesn't apply.
+	// A properly-constructed one: an implementation handed to Config.
+	// RecordRequest is the only method to satisfy; the in-memory fake
+	// stands in for internal/store's type, which needs a database.
+	rec := &fakeRecorder{}
+	cfg.Recorder = rec
+
 	mw, err := Middleware(cfg)
 	if err != nil {
-		panic(err)
+		fmt.Println("middleware:", err)
+		return
 	}
 	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	req := httptest.NewRequest("GET", "/v1/items", nil)
-	info := RequestInfo{Consumer: "GABC", Protocol: ProtocolX402}
+	info := RequestInfo{
+		Consumer: "GAJ46LDZSSYAB4YY6VMPM763P652ZROT7TBG3YYE3BZBAUZDXYDDK6OY",
+		Protocol: ProtocolX402,
+	}
 	req = req.WithContext(WithRequestInfo(req.Context(), info))
 	mw(next).ServeHTTP(httptest.NewRecorder(), req)
 
-	rec := recorder.recorded[0]
-	fmt.Printf("observed_ledger=%d units=%d charged=%s\n", rec.ObservedLedger, rec.UnitCount, rec.ChargedAmount)
+	// Everything below was filled in by the package, not the caller.
+	got := rec.recorded[0]
+	fmt.Println("recorded:", len(rec.recorded))
+	fmt.Println("operator:", got.Operator)
+	fmt.Println("consumer:", got.Consumer)
+	fmt.Println("endpoint:", got.Method, got.PathTemplate)
+	fmt.Printf("endpoint hash: %x\n", got.EndpointHash)
+	fmt.Println("units:", got.UnitCount, "(package default)")
+	fmt.Println("price version:", got.PriceVersion)
+	fmt.Println("charged amount:", got.ChargedAmount)
+	fmt.Println("protocol:", got.Protocol)
+	fmt.Println("observed ledger:", got.ObservedLedger)
+	fmt.Println("request id set:", got.RequestID != [32]byte{})
 
 	// Output:
-	// httpapi: metering config: ledger source is nil
-	// observed_ledger=1500 units=1 charged=1000
+	// zero value rejected: httpapi: metering config: recorder is nil
+	// recorded: 1
+	// operator: GDOLCHAOYP63BEHGAUJJS5IVQNUXLPBWCHO2HZRBTZRU52XBMW2TRJLM
+	// consumer: GAJ46LDZSSYAB4YY6VMPM763P652ZROT7TBG3YYE3BZBAUZDXYDDK6OY
+	// endpoint: GET /v1/items
+	// endpoint hash: 79a8cbca8c21b745b034907bd0d84cad5dc580f9370b446c9f4030d4e4affb03
+	// units: 1 (package default)
+	// price version: 1
+	// charged amount: 1000
+	// protocol: x402
+	// observed ledger: 1500
+	// request id set: true
 }
