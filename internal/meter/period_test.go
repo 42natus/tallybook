@@ -427,7 +427,8 @@ func ExampleNewPeriodCloser() {
 	// be matched with errors.Is, not by comparing error strings.
 	var _ = errors.Is(fmt.Errorf("%w", ErrNoVersionAt), ErrNoVersionAt)
 	fmt.Println("rejected")
-}
 
-// Output: accepted
-// Output: rejected
+	// Output:
+	// accepted
+	// rejected
+}

@@ -338,7 +338,7 @@ func TestCatalog_VersionAt_DetectsAPeriodSpanningAPriceChange(t *testing.T) {
 // version; this error is identified with errors.Is.
 func ExampleNewPricer() {
 	// Accepted case: NewPricer creates a pricer backed by a valid catalog.
-	sched, err := ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1"}]`))
+	sched, err := ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1"}]}`))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "unexpected:", err)
 		return
@@ -359,7 +359,8 @@ func ExampleNewPricer() {
 			fmt.Println("rejected")
 		}
 	}
-}
 
-// Output: accepted
-// Output: rejected
+	// Output:
+	// accepted
+	// rejected
+}
