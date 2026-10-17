@@ -6,8 +6,8 @@ package meter
 type PeriodStatus string
 
 const (
-	PeriodStatusOpen    PeriodStatus = "open"
-	PeriodStatusClosed  PeriodStatus = "closed"
+	PeriodStatusOpen     PeriodStatus = "open"
+	PeriodStatusClosed   PeriodStatus = "closed"
 	PeriodStatusAnchored PeriodStatus = "anchored"
 )
 

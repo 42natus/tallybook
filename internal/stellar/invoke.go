@@ -271,14 +271,19 @@ func AuthorizeInvocation(
 const authValidityLedgers = 100
 
 func randomNonce() (int64, error) {
-	// 8 random bytes reinterpreted as int64. Negative nonces (top bit set)
-	// are accepted by the Soroban host — the JS stellar SDK generates exactly
-	// this range (random.randint(-(2**63), 2**63 - 1)), the Rust soroban-sdk
-	// test uses a negative nonce (0xC0FFEE_i64) and it passes, and the Python
-	// stellar SDK does the same. This was verified against live Soroban
-	// testnet behaviour. The generation is uniformly distributed over the full
-	// int64 range; roughly half of all draws will have the top bit set and be
-	// negative.
+	// 8 random bytes reinterpreted as int64, so the result is uniformly
+	// distributed over the full signed 64-bit range and roughly half of all
+	// draws are negative. The XDR field is an int64, so a negative value is
+	// representable, and the host's own check is on nonce uniqueness rather
+	// than sign.
+	//
+	// Whether the live host accepts a negative nonce has NOT been verified
+	// from this repository, and CONTRIBUTING is explicit that a claim about
+	// this package has to be checked against the live RPC surface or the real
+	// contract source rather than asserted. #17 stays open on that point. An
+	// earlier revision of this comment cited a Rust soroban-sdk test using
+	// "a negative nonce (0xC0FFEE_i64)" as evidence; 0xC0FFEE is 12648430,
+	// which is positive, so it did not show what it claimed to.
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return 0, err

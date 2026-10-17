@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/Tallybook-Org/tallybook/internal/store"
 )
 
 // Sentinel errors for Reconciler.ReconcilePeriod.
@@ -98,15 +98,15 @@ func (r *Reconciler) ReconcilePeriod(ctx context.Context, periodID int64) (*Resu
 		return nil, fmt.Errorf("indexer: reconcile period %d: %w", periodID, ErrAnchorEventNotIngested)
 	}
 
-	meteredAmount, err := store.NumericToBigInt(metered)
+	meteredAmount, err := convert.NumericToBigInt(metered)
 	if err != nil {
 		return nil, fmt.Errorf("indexer: reconcile period %d: metered amount: %w", periodID, err)
 	}
-	billedAmount, err := store.NumericToBigInt(amountBilled)
+	billedAmount, err := convert.NumericToBigInt(amountBilled)
 	if err != nil {
 		return nil, fmt.Errorf("indexer: reconcile period %d: amount_billed: %w", periodID, err)
 	}
-	settledAmount, err := store.NumericToBigInt(amountSettled)
+	settledAmount, err := convert.NumericToBigInt(amountSettled)
 	if err != nil {
 		return nil, fmt.Errorf("indexer: reconcile period %d: amount_settled: %w", periodID, err)
 	}
@@ -123,4 +123,3 @@ func (r *Reconciler) ReconcilePeriod(ctx context.Context, periodID int64) (*Resu
 		SettledMatch:  meteredAmount.Cmp(settledAmount) == 0,
 	}, nil
 }
-

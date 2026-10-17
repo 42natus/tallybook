@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/Tallybook-Org/tallybook/internal/convert"
 )
 
 // Metrics serves §6's /metrics endpoint: "Structured slog throughout,

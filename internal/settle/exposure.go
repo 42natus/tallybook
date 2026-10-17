@@ -15,10 +15,10 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/Tallybook-Org/tallybook/internal/convert"
 )
 
 // ErrChannelNotFound is returned by Calculator.Calculate for a channel

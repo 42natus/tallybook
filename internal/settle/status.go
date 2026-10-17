@@ -6,10 +6,10 @@ package settle
 type ChannelStatus string
 
 const (
-	ChannelStatusOpen      ChannelStatus = "open"
-	ChannelStatusClosing   ChannelStatus = "closing"
-	ChannelStatusClosed    ChannelStatus = "closed"
-	ChannelStatusRefunded  ChannelStatus = "refunded"
+	ChannelStatusOpen     ChannelStatus = "open"
+	ChannelStatusClosing  ChannelStatus = "closing"
+	ChannelStatusClosed   ChannelStatus = "closed"
+	ChannelStatusRefunded ChannelStatus = "refunded"
 )
 
 // SettlementStatus is the lifecycle status of a settlement.
@@ -29,8 +29,8 @@ const (
 type PeriodStatus string
 
 const (
-	PeriodStatusOpen    PeriodStatus = "open"
-	PeriodStatusClosed  PeriodStatus = "closed"
+	PeriodStatusOpen     PeriodStatus = "open"
+	PeriodStatusClosed   PeriodStatus = "closed"
 	PeriodStatusAnchored PeriodStatus = "anchored"
 )
 
