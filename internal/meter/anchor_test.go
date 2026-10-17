@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"testing"
 
@@ -337,4 +338,92 @@ func ExampleNewAnchorer() {
 	// Output:
 	// accepted: true
 	// rejected: true
+}
+
+// ExampleAnchorResult shows how a caller consumes an AnchorResult.
+// AnchorResult is an output type — AnchorPeriod fills in every field, so a
+// caller sets none of them — but not every successful call fills every
+// field. A fresh anchor (this call submitted it) returns all six; the
+// idempotent paths (already anchored, or an attempt confirmed before a
+// crash) return only the identifiers already recorded — PeriodID,
+// StatementSeq, and TxHash when the attempt had one — leaving AmountBilled
+// nil and UsageRoot zero, because no chain call was made to learn them
+// from. A caller reading those fields must handle both shapes; the zero
+// value itself never comes back from a successful call.
+//
+// AnchorPeriod itself is not called here: it needs Postgres, and examples
+// always run. The example instead builds the two shapes from the same
+// period — the fresh result's UsageRoot is a real merkle root over the
+// period's records — with fixed values so the Output is deterministic.
+// Production values come from the period's requests and the chain.
+func ExampleAnchorResult() {
+	records := []merkle.Record{
+		{
+			Amount:       big.NewInt(1000),
+			Consumer:     testConsumer,
+			EndpointHash: merkle.EndpointHash("GET", "/v1/inference"),
+			Ledger:       1500,
+			PriceVersion: 1,
+			RequestID:    [32]byte{0x01},
+			Units:        2,
+		},
+		{
+			Amount:       big.NewInt(2000),
+			Consumer:     testConsumer,
+			EndpointHash: merkle.EndpointHash("GET", "/v1/inference"),
+			Ledger:       1600,
+			PriceVersion: 1,
+			RequestID:    [32]byte{0x02},
+			Units:        1,
+		},
+	}
+	leaves := make([][32]byte, len(records))
+	for i, r := range records {
+		leaf, err := merkle.Leaf(r)
+		if err != nil {
+			log.Fatalf("merkle.Leaf: %v", err)
+		}
+		leaves[i] = leaf
+	}
+	tree, err := merkle.BuildTree(leaves)
+	if err != nil {
+		log.Fatalf("merkle.BuildTree: %v", err)
+	}
+
+	// Fresh anchor: every field is set, and UsageRoot is the root of the
+	// tree over the period's requests.
+	fresh := AnchorResult{
+		PeriodID:     42,
+		StatementSeq: 7,
+		TxHash:       "a1b2c3d4",
+		UsageRoot:    tree.Root,
+		RequestCount: uint64(len(records)),
+		AmountBilled: big.NewInt(3000),
+	}
+	fmt.Println("fresh anchor:")
+	fmt.Println("  statement seq:", fresh.StatementSeq)
+	fmt.Println("  requests:", fresh.RequestCount)
+	fmt.Println("  amount billed:", fresh.AmountBilled)
+	fmt.Println("  usage root set:", fresh.UsageRoot != [32]byte{})
+	fmt.Println("  tx hash:", fresh.TxHash)
+
+	// Already anchored: AnchorPeriod returns the recorded statement_seq
+	// with no chain call, so only these two fields are set.
+	prior := AnchorResult{PeriodID: 42, StatementSeq: 7}
+	fmt.Println("already anchored:")
+	fmt.Println("  statement seq:", prior.StatementSeq)
+	fmt.Println("  amount billed unset:", prior.AmountBilled == nil)
+	fmt.Println("  usage root unset:", prior.UsageRoot == [32]byte{})
+
+	// Output:
+	// fresh anchor:
+	//   statement seq: 7
+	//   requests: 2
+	//   amount billed: 3000
+	//   usage root set: true
+	//   tx hash: a1b2c3d4
+	// already anchored:
+	//   statement seq: 7
+	//   amount billed unset: true
+	//   usage root unset: true
 }
