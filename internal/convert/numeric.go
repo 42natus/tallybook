@@ -1,14 +1,14 @@
-package settle
+package convert
 
 import (
 	"errors"
 	"fmt"
-	"math/big"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"math/big"
 )
 
-// numericToBigInt converts a NUMERIC(39,0) column's scanned value to
+// NumericToBigInt converts a NUMERIC(39,0) column's scanned value to
 // *big.Int. Every numeric column this package reads (cumulative_amount,
 // last_settled_amount, charged_amount elsewhere) is declared with scale 0
 // (§5), but that constrains the logical value, not how Postgres's wire
@@ -20,7 +20,7 @@ import (
 // result. A positive Exp is just scaling, handled here; a negative Exp
 // would mean a genuine fractional value slipped into a scale-0 column,
 // still worth erroring on rather than silently truncating money.
-func numericToBigInt(n pgtype.Numeric) (*big.Int, error) {
+func NumericToBigInt(n pgtype.Numeric) (*big.Int, error) {
 	if !n.Valid {
 		return nil, errors.New("numeric value is NULL")
 	}

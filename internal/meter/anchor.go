@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -172,7 +173,7 @@ func (a *Anchorer) fetchRequests(ctx context.Context, periodID int64) ([]request
 		if err := rows.Scan(&requestID, &endpointHash, &unitCount, &chargedAmount, &observedLedger); err != nil {
 			return nil, fmt.Errorf("meter: anchor: scan request row: %w", err)
 		}
-		amount, err := numericToBigInt(chargedAmount)
+		amount, err := convert.NumericToBigInt(chargedAmount)
 		if err != nil {
 			return nil, fmt.Errorf("meter: anchor: charged_amount: %w", err)
 		}
@@ -372,13 +373,13 @@ func (a *Anchorer) AnchorPeriod(
 		return nil, err
 	}
 
-	if period.status == "anchored" {
+	if PeriodStatus(period.status) == PeriodStatusAnchored {
 		if period.statementSeq == nil {
 			return nil, fmt.Errorf("meter: anchor period %d: status is anchored but statement_seq is unset", periodID)
 		}
 		return &AnchorResult{PeriodID: periodID, StatementSeq: *period.statementSeq}, nil
 	}
-	if period.status != "closed" {
+	if PeriodStatus(period.status) != PeriodStatusClosed {
 		return nil, fmt.Errorf("meter: anchor period %d: %w (status is %q)", periodID, ErrPeriodNotClosed, period.status)
 	}
 	if period.periodEnd == nil {
@@ -390,7 +391,7 @@ func (a *Anchorer) AnchorPeriod(
 	if active, err := a.findActiveAttempt(ctx, periodID); err != nil {
 		return nil, err
 	} else if active != nil {
-		if active.status == "submitting" {
+		if AnchorStatus(active.status) == AnchorStatusSubmitting {
 			return nil, fmt.Errorf("meter: anchor period %d: %w", periodID, ErrAnchorInFlight)
 		}
 		// confirmed, but the period wasn't updated yet — finish locally.

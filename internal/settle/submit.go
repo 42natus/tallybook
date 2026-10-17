@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -157,7 +158,7 @@ func (s *Submitter) Submit(ctx context.Context, channel ChannelSettler, signer *
 		return nil, err
 	}
 	if resolved {
-		if rec.Status == "submitting" {
+		if SettlementStatus(rec.Status) == SettlementStatusSubmitting {
 			return rec, fmt.Errorf("settle: submit %s %s: %w", channelAddress, amount, ErrSettlementInFlight)
 		}
 		return rec, nil
@@ -277,7 +278,7 @@ func (s *Submitter) ReconcileSubmitting(ctx context.Context, channelAddress stri
 			rows.Close()
 			return nil, fmt.Errorf("settle: reconcile submitting for %s: scan: %w", channelAddress, err)
 		}
-		amount, err := numericToBigInt(amountNum)
+		amount, err := convert.NumericToBigInt(amountNum)
 		if err != nil {
 			rows.Close()
 			return nil, fmt.Errorf("settle: reconcile submitting for %s: %w", channelAddress, err)

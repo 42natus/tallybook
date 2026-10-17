@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -105,7 +106,7 @@ func TestNumericToBigInt_HandlesPositiveExponent(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := numericToBigInt(tt.n)
+			got, err := convert.NumericToBigInt(tt.n)
 			if err != nil {
 				t.Fatalf("numericToBigInt returned unexpected error: %v", err)
 			}
@@ -117,10 +118,10 @@ func TestNumericToBigInt_HandlesPositiveExponent(t *testing.T) {
 }
 
 func TestNumericToBigInt_RejectsInvalid(t *testing.T) {
-	if _, err := numericToBigInt(pgtype.Numeric{Valid: false}); err == nil {
+	if _, err := convert.NumericToBigInt(pgtype.Numeric{Valid: false}); err == nil {
 		t.Error("numericToBigInt accepted a NULL (Valid=false) numeric")
 	}
-	if _, err := numericToBigInt(pgtype.Numeric{Int: big.NewInt(1), Exp: -2, Valid: true}); err == nil {
+	if _, err := convert.NumericToBigInt(pgtype.Numeric{Int: big.NewInt(1), Exp: -2, Valid: true}); err == nil {
 		t.Error("numericToBigInt accepted a negative exponent (a fractional value) for a scale-0 column")
 	}
 }

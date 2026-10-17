@@ -153,7 +153,7 @@ func SubmitWithRetry(ctx context.Context, s *Submitter, channel ChannelSettler, 
 		return nil, err
 	}
 	if resolved {
-		if rec.Status == "submitting" {
+		if SettlementStatus(rec.Status) == SettlementStatusSubmitting {
 			return rec, fmt.Errorf("settle: submit with retry %s %s: %w", channelAddress, amount, ErrSettlementInFlight)
 		}
 		return rec, nil

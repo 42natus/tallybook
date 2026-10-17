@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -89,7 +90,7 @@ func (calc *Calculator) Calculate(ctx context.Context, channel string) (*Exposur
 		return nil, fmt.Errorf("settle: calculate exposure for %s: %w", channel, err)
 	}
 
-	lastSettledAmount, err := numericToBigInt(lastSettled)
+	lastSettledAmount, err := convert.NumericToBigInt(lastSettled)
 	if err != nil {
 		return nil, fmt.Errorf("settle: calculate exposure for %s: last_settled_amount: %w", channel, err)
 	}
@@ -97,7 +98,7 @@ func (calc *Calculator) Calculate(ctx context.Context, channel string) (*Exposur
 	unsettled := big.NewInt(0)
 	var highestVerifiedAmount *big.Int
 	if highestVerified.Valid {
-		highestVerifiedAmount, err = numericToBigInt(highestVerified)
+		highestVerifiedAmount, err = convert.NumericToBigInt(highestVerified)
 		if err != nil {
 			return nil, fmt.Errorf("settle: calculate exposure for %s: highest_verified: %w", channel, err)
 		}

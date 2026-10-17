@@ -84,6 +84,15 @@ func Decide(p Policy, state ChannelState, currentLedger uint32, now time.Time) D
 		return decision
 	}
 
+	// Decide only operates on open or closing channels — settled or refunded
+	// channels have no unsettled exposure by business logic, but we check
+	// here to make Decide a pure function of its inputs and not depend on
+	// caller invariants (§6: "it should not depend on a caller invariant it
+	// can check itself").
+	if ChannelStatus(state.Status) != ChannelStatusOpen && ChannelStatus(state.Status) != ChannelStatusClosing {
+		return decision
+	}
+
 	switch {
 	case state.RefundDeadlineLedger != nil &&
 		uint64(currentLedger)+uint64(p.SafetyMarginLedgers) >= uint64(*state.RefundDeadlineLedger):
@@ -92,7 +101,7 @@ func Decide(p Policy, state ChannelState, currentLedger uint32, now time.Time) D
 		decision.Trigger = TriggerExposureThreshold
 	case p.MaxExposureAge > 0 && state.Exposure.Age(now) > p.MaxExposureAge:
 		decision.Trigger = TriggerAgeThreshold
-	case state.Status == "closing":
+	case ChannelStatus(state.Status) == ChannelStatusClosing:
 		decision.Trigger = TriggerChannelClosing
 	default:
 		return decision
