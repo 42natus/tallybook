@@ -56,8 +56,34 @@ jobs:
 
       - name: staticcheck
         run: |
-          go install honnef.co/go/tools/cmd/staticcheck@2025.1.1
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
           staticcheck ./...
+
+      # govulncheck gates the build: it is clean as of the toolchain and
+      # golang.org/x/text bumps in this commit, so any new finding is a real
+      # regression worth stopping for.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          govulncheck ./...
+
+      # gosec reports but does NOT gate yet. It currently finds 31 issues, none
+      # of which is a new defect:
+      #   G115 x22  integer conversions, needs per-site triage -- some are
+      #             genuinely bounded, some want an explicit check
+      #   G101 x4   false positives: the env-var NAME constants in
+      #             internal/config (TB_OPERATOR_SECRET et al) and a SQL string
+      #   G112 x3   real, and already tracked by #13 (http.Server timeouts)
+      #   G404 x1   math/rand for retry jitter, which is not a crypto use
+      #   G304 x1   reading TB_OPERATOR_SECRET_PATH, which is the documented
+      #             behaviour of that variable (section 7)
+      # Flip continue-on-error off once those are triaged; gating on it today
+      # would mean excluding every rule that fires, which teaches nothing.
+      - name: gosec
+        continue-on-error: true
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.29.0
+          gosec ./...
 
       - name: go build
         run: go build ./...
