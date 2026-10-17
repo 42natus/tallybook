@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
 )
@@ -200,4 +201,34 @@ func ExampleScheduleHash() {
 	fmt.Printf("%x\n", hash)
 	// Output:
 	// a57eb2939c5e1fb0163192975ab3acd02b5bdbbf67e9f535e8abe229649e12fc
+}
+
+// ExampleParseSchedule demonstrates the ParseSchedule constructor and the
+// error-sentinel pattern used for schedule validation. The accepted case
+// shows a valid schedule being parsed successfully; the rejected case shows
+// ParseSchedule returning an error when the schedule has no rules, with the
+// sentinel identified via errors.Is rather than string comparison.
+func ExampleParseSchedule() {
+	// Accepted case: ParseSchedule parses a valid schedule document.
+	raw := []byte(`{"rules": [{"method": "GET", "path_template": "/v1/items", "unit_price": "1"}]}`)
+	sched, err := ParseSchedule(raw)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "unexpected:", err)
+		return
+	}
+	_ = sched
+	fmt.Println("accepted")
+
+	// Rejected case: ParseSchedule returns ErrEmptySchedule when the
+	// document has no rules. This error must be matched with errors.Is.
+	_, err = ParseSchedule([]byte(`{"rules": []}`))
+	if err != nil {
+		if errors.Is(err, ErrEmptySchedule) {
+			fmt.Println("rejected")
+		}
+	}
+
+	// Output:
+	// accepted
+	// rejected
 }
