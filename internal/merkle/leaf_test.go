@@ -3,6 +3,8 @@ package merkle
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
+	"log"
 	"math/big"
 	"strings"
 	"testing"
@@ -242,4 +244,42 @@ func TestEndpointHash_DistinguishesMethodAndPath(t *testing.T) {
 	if a == b {
 		t.Error("EndpointHash collided across a method/path boundary shift")
 	}
+}
+
+// ExampleRecord shows how a caller constructs a Record and what the zero
+// value is worth. Record is not an output type: every field is
+// caller-supplied, because each comes from a different part of the same
+// billed request — the pricing result (Amount, PriceVersion, Units), the
+// request's identity (RequestID, EndpointHash), and where it was observed
+// (Consumer, Ledger) — and the package fills in none of them. The zero
+// value is not a valid record: Leaf refuses a nil Amount rather than
+// encoding a zero charge, which is the failure shown below.
+//
+// EndpointHash is the one field a caller should not derive by hand: the
+// package's EndpointHash is the single derivation shared with the meter's
+// pricing lookup, so calling it is what keeps the two keyed on the same
+// value.
+func ExampleRecord() {
+	r := Record{
+		Amount:       big.NewInt(1500),
+		Consumer:     testConsumer,
+		EndpointHash: EndpointHash("GET", "/v1/inference"),
+		Ledger:       1042,
+		PriceVersion: 3,
+		RequestID:    exampleFill32(0x42),
+		Units:        1,
+	}
+
+	leaf, err := Leaf(r)
+	if err != nil {
+		log.Fatalf("Leaf: %v", err)
+	}
+	fmt.Printf("leaf: %x\n", leaf)
+
+	_, err = Leaf(Record{})
+	fmt.Println("zero value:", err)
+
+	// Output:
+	// leaf: 466eb5a1459628ea9a8fb04e573077fd9f95a761797a33054d912b22cbc81d14
+	// zero value: merkle: encode record: amount: nil amount
 }
