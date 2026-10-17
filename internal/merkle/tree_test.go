@@ -3,6 +3,8 @@ package merkle
 import (
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -196,4 +198,46 @@ func TestVerifyProof_RejectsWrongLeafOrProof(t *testing.T) {
 	if VerifyProof(wrongRoot, leaves[0], tree.Proofs[0]) {
 		t.Error("VerifyProof accepted a mismatched root")
 	}
+}
+
+// ExampleTree shows how a caller obtains a Tree and what its two fields
+// hold. Tree is an output type: BuildTree computes Root and every entry of
+// Proofs, so a caller assigns neither — the zero value is not a usable
+// tree (a zero Root and no proofs), and BuildTree is the only supported
+// constructor. The example builds a three-leaf tree, an odd count, so the
+// unbalanced promotion path the contract's fold algorithm pins down is
+// the one exercised; every proof folds back to the root, and the zero
+// value verifies nothing.
+func ExampleTree() {
+	leaves := [][32]byte{
+		exampleFill32(0x01),
+		exampleFill32(0x02),
+		exampleFill32(0x03),
+	}
+
+	tree, err := BuildTree(leaves)
+	if err != nil {
+		log.Fatalf("BuildTree: %v", err)
+	}
+	fmt.Printf("root: %x\n", tree.Root)
+	fmt.Println("proofs:", len(tree.Proofs))
+
+	allVerify := true
+	for i, leaf := range leaves {
+		allVerify = allVerify && VerifyProof(tree.Root, leaf, tree.Proofs[i])
+	}
+	fmt.Println("every proof folds to the root:", allVerify)
+
+	var zero Tree
+	fmt.Println("zero-value root is unset:", zero.Root == [32]byte{})
+	fmt.Println("zero-value proofs are unset:", zero.Proofs == nil)
+	fmt.Println("zero value verifies a leaf:", VerifyProof(zero.Root, leaves[0], nil))
+
+	// Output:
+	// root: 60457daa082476d6d1c02c1581a36bb4fad5dac0c5e6bdd0ee4adc5cd0425c21
+	// proofs: 3
+	// every proof folds to the root: true
+	// zero-value root is unset: true
+	// zero-value proofs are unset: true
+	// zero value verifies a leaf: false
 }
