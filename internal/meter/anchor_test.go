@@ -427,3 +427,39 @@ func ExampleAnchorResult() {
 	//   amount billed unset: true
 	//   usage root unset: true
 }
+
+// ExampleAnchorSubmitter shows how a caller obtains an AnchorSubmitter.
+// AnchorSubmitter is an interface, so a caller never constructs one — it
+// selects an implementation and hands it to Anchorer.AnchorPeriod, the one
+// caller, which makes the single method call. In production that
+// implementation is *stellar.StatementRegistry (asserted below at compile
+// time); in tests it is a fake, the implementation exercised here because
+// the real one would need a live Soroban RPC endpoint. The zero value is a
+// nil interface: calling through it panics, which is why AnchorPeriod
+// takes the registry as a required argument rather than defaulting to one.
+func ExampleAnchorSubmitter() {
+	// Compile-time proof the production implementation satisfies the
+	// interface — this line stops compiling if Anchor's signature ever
+	// drifts from *stellar.StatementRegistry's method.
+	var _ AnchorSubmitter = (*stellar.StatementRegistry)(nil)
+
+	// The same single method, implemented in memory: exactly the call
+	// AnchorPeriod makes.
+	fake := &fakeAnchorSubmitter{seq: 7, hash: "a1b2c3d4"}
+	seq, txHash, err := fake.Anchor(context.Background(), nil, testConsumer, 1000, 1999,
+		[32]byte{0xAA}, 2, "CTOKEN", big.NewInt(3000), big.NewInt(3000), 1, stellar.ProtocolX402, nil)
+	if err != nil {
+		log.Fatalf("Anchor: %v", err)
+	}
+	fmt.Println("statement seq:", seq)
+	fmt.Println("tx hash:", txHash)
+
+	// The zero value: an AnchorSubmitter left unwired.
+	var unwired AnchorSubmitter
+	fmt.Println("zero value is nil:", unwired == nil)
+
+	// Output:
+	// statement seq: 7
+	// tx hash: a1b2c3d4
+	// zero value is nil: true
+}
