@@ -761,3 +761,60 @@ func ExampleGetEventsParams() {
 	// from cursor: {"filters":[{"type":"contract","contractIds":["CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"]}],"pagination":{"cursor":"0019804738446950400-0000000002","limit":3},"xdrFormat":"base64"}
 	// events: 3
 }
+
+// ExampleEventInfo reads EventInfos as GetEvents fills them in from a
+// recorded testnet response. A caller never sets any field; the RPC node
+// sets all of them. Topic and Value are base64 ScVals, not plain strings,
+// so a caller decodes them before use (MatchesTopic does this for
+// all-Symbol topics). ID is unique per event and is what the indexer
+// de-duplicates on. InSuccessfulContractCall matters: an event can be
+// emitted by a call that later failed, and its effects were rolled back, so
+// a caller must not treat it as something that happened on chain. The zero
+// value has an empty ID and no topics, so it is not an event.
+func ExampleEventInfo() {
+	var zero EventInfo
+	fmt.Printf("zero value: id=%q topics=%d\n", zero.ID, len(zero.Topic))
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json): three fee events from the native
+	// asset contract, topic ("fee", payer) and value i128 stroops.
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+	result, err := client.GetEvents(context.Background(), GetEventsParams{
+		StartLedger: 4611150,
+		Pagination:  &EventsPagination{Limit: 3},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, ev := range result.Events {
+		if !ev.InSuccessfulContractCall {
+			fmt.Println("skip", ev.ID, "(call failed)")
+			continue
+		}
+		name, err := UnmarshalScValBase64(ev.Topic[0])
+		if err != nil {
+			log.Fatal(err)
+		}
+		sym, err := DecodeSymbol(name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		val, err := UnmarshalScValBase64(ev.Value)
+		if err != nil {
+			log.Fatal(err)
+		}
+		amount, err := DecodeI128(val)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s ledger=%d %s=%s\n", ev.ID, ev.Ledger, sym, amount)
+	}
+
+	// Output:
+	// zero value: id="" topics=0
+	// skip 0019804738446950400-0000000000 (call failed)
+	// 0019804738446950400-0000000001 ledger=4611150 fee=26931
+	// 0019804738446950400-0000000002 ledger=4611150 fee=17211
+}
