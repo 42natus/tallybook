@@ -359,6 +359,23 @@ func TestRequestStore_RecordRequest_WithoutAPeriodWritesNull(t *testing.T) {
 	}
 }
 
+// ExampleRequestStore constructs a RequestStore the way a caller would,
+// demonstrating that the only required field is the pool and that RecordRequest
+// is the primary usage path. The zero value of RequestStore is not useful
+// without a pool, so this example shows the proper construction.
+func ExampleRequestStore() {
+	// RequestStore has a single field (pool) that the caller must provide.
+	// NewRequestStore wraps it; the package fills in no fields of its own.
+	_ = NewRequestStore(nil)
+
+	// RecordRequest is the primary mutating operation. This example does not
+	// call it against a real database — it exists to show the construction
+	// pattern and that every caller-set field is visible.
+	//
+	// No // Output: is asserted because RecordRequest's behaviour depends on
+	// the database state and the example uses a nil pool placeholder.
+}
+
 func mustHexBytes(t *testing.T, suffix string) []byte {
 	t.Helper()
 	// Pads suffix out to 32 bytes (64 hex characters) with zeros so each
