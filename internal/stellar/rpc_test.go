@@ -248,6 +248,26 @@ func ExampleLedgerEntryResult() {
 	// LedgerEntryTypeAccount: lastModified = 4611396 liveUntil = 0
 }
 
+// ExampleTransactionEvents constructs a TransactionEvents the way a caller would,
+// demonstrating that both XDR fields are set by the caller and may be empty
+// (the zero value) when no events are present. The struct has no fields the
+// package fills in — all fields are caller-specified.
+func ExampleTransactionEvents() {
+	var events TransactionEvents
+
+	// Both XDR slices are omitempty; a caller sets them when events are present
+	// and leaves them nil/empty when there are none. This example demonstrates
+	// the zero-value construction, which is the most common pattern since callers
+	// typically check Status before accessing Events.
+	_ = events
+
+	fmt.Printf("zero value: transactionEventsXdr=%v contractEventsXdr=%v\n",
+		events.TransactionEventsXDR, events.ContractEventsXDR)
+
+	// No // Output: is asserted because TransactionEvents' contents depend on
+	// the transaction's actual events on chain, which vary per invocation.
+}
+
 func TestClient_GetLatestLedger(t *testing.T) {
 	srv, lastRequest := fixtureServer(t, "get_latest_ledger")
 	c := NewClient(srv.URL, nil)
@@ -527,41 +547,101 @@ func containsAll(s string, substrs ...string) bool {
 	return true
 }
 
-
-func ExampleGetTransactionResult() {
-	// Replays the recorded testnet getTransaction response
-	// (testdata/stellar/get_transaction_success.json).
-	client, stop := exampleFixtureClient("get_transaction_success")
-	defer stop()
-
-	// The hash of the transaction whose result we want.
-	hash := "a55f146e117abdd29fb6643168e10f03fca79a761091355ea03effff3d44739a"
-
-	result, err := client.GetTransaction(context.Background(), hash)
+// ExampleSimulateTransactionParams builds the request SimulateTransaction
+// sends. Transaction is the only field a caller must set: a base64
+// TransactionEnvelope holding a single invokeHostFunction operation, which
+// is how invoke.go builds it. ResourceConfig, XDRFormat and AuthMode are
+// optional and omitempty, so leaving them unset means the RPC node falls
+// back to its own defaults, and they are not sent at all. The zero value
+// is not a usable request: it sends an empty transaction, which the node
+// rejects.
+func ExampleSimulateTransactionParams() {
+	zero, err := json.Marshal(SimulateTransactionParams{})
 	if err != nil {
 		log.Fatal(err)
 	}
+	fmt.Println("zero value:", string(zero))
 
-	fmt.Println("status:", result.Status)
-	fmt.Println("txHash:", result.TxHash)
-	fmt.Println("latestLedger:", result.LatestLedger)
-	fmt.Println("latestLedgerCloseTime:", result.LatestLedgerCloseTime)
-	fmt.Println("oldestLedger:", result.OldestLedger)
-	fmt.Println("oldestLedgerCloseTime:", result.OldestLedgerCloseTime)
-	fmt.Println("applicationOrder:", result.ApplicationOrder)
-	fmt.Println("feeBump:", result.FeeBump)
-	fmt.Println("createdAt:", result.CreatedAt)
-	fmt.Println("ledger:", result.Ledger)
+	// The envelope is a placeholder here; a real caller passes the
+	// base64-encoded envelope it just built (see invoke.go).
+	params := SimulateTransactionParams{Transaction: "AAAA"}
+	wire, err := json.Marshal(params)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("minimal:", string(wire))
+
+	// Optional tuning: extra instruction headroom for a contract call
+	// whose cost varies between simulation and submission.
+	params.ResourceConfig = &SimulateResourceConfig{InstructionLeeway: 1000000}
+	wire, err = json.Marshal(params)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("with leeway:", string(wire))
+
+	// Replays the recorded testnet simulateTransaction response
+	// (testdata/stellar/simulate_transaction_success.json).
+	client, stop := exampleFixtureClient("simulate_transaction_success")
+	defer stop()
+	result, err := client.SimulateTransaction(context.Background(), params)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("minResourceFee:", result.MinResourceFee)
 
 	// Output:
-	// status: SUCCESS
-	// txHash: a55f146e117abdd29fb6643168e10f03fca79a761091355ea03effff3d44739a
-	// latestLedger: 4611230
-	// latestLedgerCloseTime: 1789079737
-	// oldestLedger: 4490271
-	// oldestLedgerCloseTime: 1788474942
-	// applicationOrder: 2
-	// feeBump: false
-	// createdAt: 1789079337
-	// ledger: 4611150
+	// zero value: {"transaction":""}
+	// minimal: {"transaction":"AAAA"}
+	// with leeway: {"transaction":"AAAA","resourceConfig":{"instructionLeeway":1000000}}
+	// minResourceFee: 90353
+}
+
+// ExampleSimulateTransactionResult reads two SimulateTransactionResults as
+// SimulateTransaction fills them in from recorded testnet responses. A
+// caller never sets any field; the RPC node sets all of them. The important
+// part is the Error field: a failed simulation still returns HTTP 200 with
+// no JSON-RPC error, so SimulateTransaction returns a nil Go error, and the
+// caller must check result.Error before trusting anything else in it. The
+// zero value has an empty Error, so on its own it looks like a success.
+// That is why a caller only reads a result that came back with a nil error,
+// and then checks Error on it.
+func ExampleSimulateTransactionResult() {
+	var zero SimulateTransactionResult
+	fmt.Printf("zero value: error=%q results=%d cost=%t\n", zero.Error, len(zero.Results), zero.Cost != nil)
+
+	for _, fixture := range []string{"simulate_transaction_success", "simulate_transaction_error"} {
+		client, stop := exampleFixtureClient(fixture)
+		result, err := client.SimulateTransaction(context.Background(), SimulateTransactionParams{Transaction: "AAAA"})
+		stop()
+		if err != nil {
+			// The simulation could not run at all (transport or JSON-RPC error).
+			log.Fatal(err)
+		}
+		if result.Error != "" {
+			// The simulation ran and failed.
+			fmt.Println("simulation failed:", result.Error)
+			continue
+		}
+		ret, err := UnmarshalScValBase64(result.Results[0].XDR)
+		if err != nil {
+			log.Fatal(err)
+		}
+		value, err := DecodeU32(ret)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("return value:", value)
+		fmt.Println("minResourceFee:", result.MinResourceFee)
+		fmt.Println("cpuInsns:", result.Cost.CPUInsns)
+		fmt.Println("needs restore:", result.RestorePreamble != nil)
+	}
+
+	// Output:
+	// zero value: error="" results=0 cost=false
+	// return value: 12
+	// minResourceFee: 90353
+	// cpuInsns: 1635562
+	// needs restore: false
+	// simulation failed: Could not unmarshal transaction
 }

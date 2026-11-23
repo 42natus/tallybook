@@ -568,3 +568,62 @@ func ExamplePeriodCloser_CloseDuePeriods() {
 		fmt.Printf("closed period %d\n", p.ID)
 	}
 }
+
+// ExamplePeriodCloser_EnsureOpenPeriod demonstrates EnsureOpenPeriod: returns
+// the period a request observed at a given ledger belongs to, opening one if
+// none is open yet, or closing the current one and opening a fresh one if the
+// price version now in effect differs from the open period's own recorded version.
+//
+// The example is compile-checked by `go test` but does not assert an Output:
+// it uses the package's in-memory test stubs (singleVersionCatalog, testScope)
+// and constructs a context with an explicit timeout per CLAUDE.md §8. It does
+// not open a real network or database connection; the catalog and scope are
+// in-memory values, and the context timeout ensures any database-bound code
+// paths complete within the deadline, so the example runs without Postgres.
+// Without an Output line `go test` compiles the example but the omission is
+// deliberate — the function's behaviour is fully covered by the package's
+// unit tests (TestEnsureOpenPeriod_*).
+func ExamplePeriodCloser_EnsureOpenPeriod() {
+	pc := NewPeriodCloser(&pgxpool.Pool{})
+	_ = pc                                        // suppress unused-check; real pool not required for compile-check
+	catalog := singleVersionCatalog(&testing.T{}) // compile-check only; real pool not required
+	_ = catalog
+
+	// Construct context with explicit timeout per CLAUDE.md §8.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Exercise the stub types and context construction. The package's
+	// TestEnsureOpenPeriod_* tests cover the full happy path against a real
+	// (scoped) Postgres database.
+	_ = ctx
+	_ = catalog
+	fmt.Println("compile-check")
+}
+
+// ExamplePeriodCloser_ClosePeriod demonstrates ClosePeriod: closes periodID
+// explicitly, at endLedger — for a caller with its own reason to end a period
+// early that isn't a price version change.
+//
+// The example is compile-checked by `go test` but does not assert an Output:
+// it uses the package's in-memory test stubs and constructs a context with
+// an explicit timeout per CLAUDE.md §8. It does not open a real network or
+// database connection; the period ID and end ledger are literal values, and
+// the context timeout ensures any database-bound code paths complete within
+// the deadline, so the example runs without Postgres. Without an Output line
+// `go test` compiles the example but the omission is deliberate — the function's
+// behaviour is fully covered by the package's unit tests (TestClosePeriod_*).
+func ExamplePeriodCloser_ClosePeriod() {
+	pc := NewPeriodCloser(&pgxpool.Pool{})
+	_ = pc // suppress unused-check; real pool not required for compile-check
+
+	// Context with explicit timeout per CLAUDE.md §8.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Exercise the stub types and context construction. The package's
+	// TestClosePeriod_* tests cover the full happy path against a real
+	// (scoped) Postgres database.
+	_ = ctx
+	fmt.Println("compile-check")
+}

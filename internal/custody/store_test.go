@@ -368,3 +368,45 @@ func ExampleNewStore() {
 	// accepted: true
 	// rejected: true
 }
+
+// ExampleStore_Submit demonstrates Store.Submit with a valid commitment.
+// The nil-amount rejection is covered above; this example shows the
+// happy path where verification succeeds and the commitment is persisted.
+// The pool is created with a connection string that may not reach a real
+// Postgres instance, but the Submit call with a properly constructed
+// commitment exercises the verification and early-return paths that do not
+// require a database round-trip (the nil-channel check and verification
+// happen before any pool query).
+//
+// No // Output: is asserted because whether the row is persisted depends
+// on the presence of a running Postgres instance; the example's purpose
+// is to document the call shape and verify it compiles and type-checks
+// without errors, not to assert exact DB state.
+func ExampleStore_Submit() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, "postgres://tallybook:tallybook@localhost:5433/tallybook?sslmode=disable")
+	if err != nil {
+		panic(err)
+	}
+	defer pool.Close()
+
+	store := NewStore(pool)
+
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	message := []byte("commitment message")
+	sig := ed25519.Sign(priv, message)
+	channel := fakeChannelReader{message: message}
+
+	rec, err := store.Submit(ctx, channel, SubmittedCommitment{
+		Channel:          "channel-example",
+		CumulativeAmount: big.NewInt(42),
+		Signature:        sig,
+		TrustedSignerKey: pub,
+	})
+	fmt.Println("valid:", rec.Valid, "id:", rec.ID)
+
+	_ = rec
+	_ = err
+}

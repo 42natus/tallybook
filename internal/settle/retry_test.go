@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stellar/go-stellar-sdk/keypair"
 
 	"github.com/Tallybook-Org/tallybook/internal/stellar"
@@ -391,5 +392,57 @@ func TestSubmitWithRetry_ExistingSubmittingRowRefusesWithoutCallingSettle(t *tes
 	}
 	if len(fake.calls) != 0 {
 		t.Error("Settle was called despite an unresolved submitting row already existing")
+	}
+}
+
+// ExampleSubmitWithRetry shows one settlement attempt driven to an
+// outcome. Intent is recorded once, up front, keyed by (channel,
+// cumulative_amount), so calling it again for the same amount is safe: an
+// existing 'confirmed' or 'failed' row is returned as-is and a
+// 'submitting' one is refused with ErrSettlementInFlight rather than
+// re-entered. A transient failure backs off and retries until
+// opts.Deadline, tightening its interval near the end; a permanent one
+// (IsPermanent) marks the row 'failed' and stops at once. A transient
+// failure never marks the row 'failed', even when the deadline passes —
+// the row stays 'submitting' for ReconcileSubmitting, because whether the
+// last attempt reached the chain is genuinely unknown.
+//
+// The pool, channel and clock are the package's own test stubs:
+// fakeChannelSettler stands in for one-way-channel's settle, and
+// fakeClock/fakeSleeper make the backoff instant. The signer is nil
+// because the fake never dereferences it; production passes the operator
+// key loaded via TB_OPERATOR_SECRET_SOURCE.
+// There is no // Output: line on purpose: SubmitWithRetry records and
+// updates a settlements row and reads the commitment's signature from
+// Postgres, so its result depends on database state an example cannot set
+// up without a live database. Without an Output line `go test` compiles
+// the example but does not run it, so the zero-value pool is never dialed.
+// It is here to pin the call shape: a signature change breaks the build.
+// The behaviour is covered by the TestSubmitWithRetry_* tests above.
+func ExampleSubmitWithRetry() {
+	submitter := NewSubmitter(&pgxpool.Pool{})
+	channel := &fakeChannelSettler{hash: "abc123"}
+	var signer *keypair.Full
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	clock := &fakeClock{now: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)}
+	opts := DefaultRetryOptions(clock.Now().Add(20 * time.Second))
+	opts.Now = clock.Now
+	opts.Sleep = (&fakeSleeper{clock: clock}).Sleep
+
+	rec, err := SubmitWithRetry(ctx, submitter, channel, signer, testChannel, big.NewInt(20_000_000), opts)
+	switch {
+	case errors.Is(err, ErrSettlementInFlight):
+		fmt.Println("an earlier attempt is still submitting; run ReconcileSubmitting first")
+	case err != nil && rec != nil:
+		// Permanent failure ('failed'), or deadline/cancellation with the
+		// row left 'submitting' for reconciliation.
+		fmt.Println("settlement", rec.Status, ":", err)
+	case err != nil:
+		fmt.Println("submit with retry:", err)
+	default:
+		fmt.Println("settled", testChannel, "tx", rec.TxHash)
 	}
 }

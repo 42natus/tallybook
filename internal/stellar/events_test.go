@@ -627,27 +627,133 @@ func FuzzDecodeEvents(f *testing.F) {
 	})
 }
 
+// ExampleStatementAnchorEvent compares an anchor event with the statement
+// the caller anchored. A caller never builds a StatementAnchorEvent to
+// send: the contract emits one, and DecodeStatementAnchorEvent fills it in
+// from EventInfo.Value. The literal below is what a caller (a reconciler,
+// for example) writes to say which anchor it expects to see. Every field
+// comes from the Anchor call, except Seq, which the contract assigns and
+// Anchor returns. The event has only seven of Statement's fields, so it
+// confirms which statement was anchored; GetStatement gives the full record.
+// The zero value's nil amounts mean "not decoded", not zero.
+func ExampleStatementAnchorEvent() {
+	var zero StatementAnchorEvent
+	fmt.Printf("zero value: seq=%d billed=%v protocol=%q\n", zero.Seq, zero.AmountBilled, zero.Protocol)
 
-func ExamplePriceBookPublishEvent() {
-	// Construct the struct manually, setting every field a caller is
-	// required to set. The package does not fill in any fields.
-	var ev PriceBookPublishEvent
-	ev.Operator = "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A"
-	ev.Version = 1
-	// ScheduleHash is 32 bytes; use a known test value.
-	copy(ev.ScheduleHash[:], []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
-		0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20})
-	ev.EffectiveLedger = 4612165
+	var usageRoot [32]byte
+	if _, err := hex.Decode(usageRoot[:], []byte("81a124533e675e367701982b81e8dfd60c848bfb7d031933bfbc4b2fb04d4225")); err != nil {
+		log.Fatal(err)
+	}
+	want := StatementAnchorEvent{
+		Operator:      "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A",
+		Consumer:      "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG",
+		Seq:           2, // returned by Anchor
+		UsageRoot:     usageRoot,
+		AmountBilled:  big.NewInt(2000),
+		AmountSettled: big.NewInt(2000),
+		Protocol:      ProtocolX402,
+	}
 
-	fmt.Println("operator:", ev.Operator)
-	fmt.Println("version:", ev.Version)
-	fmt.Printf("effective_ledger: %d\n", ev.EffectiveLedger)
-	fmt.Println("schedule_hash:", hex.EncodeToString(ev.ScheduleHash[:]))
+	// A genuine ("statement", "anchor") event's Value, captured live from
+	// testnet (fixture events_statement_registry).
+	const anchorValueB64 = "AAAAEAAAAAEAAAAHAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAASAAAAAAAAAACtXWITvZ/9QnTuL9KzW/xEfHokr4K/TUEhRQ7HUBTv7wAAAAUAAAAAAAAAAgAAAA0AAAAggaEkUz5nXjZ3AZgrgejf1gyEi/t9Axkzv7xLL7BNQiUAAAAKAAAAAAAAAAAAAAAAAAAH0AAAAAoAAAAAAAAAAAAAAAAAAAfQAAAAEAAAAAEAAAABAAAADwAAAARYNDAy"
+	got, err := DecodeStatementAnchorEvent(anchorValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	matches := got.Operator == want.Operator &&
+		got.Consumer == want.Consumer &&
+		got.Seq == want.Seq &&
+		got.UsageRoot == want.UsageRoot &&
+		got.AmountBilled.Cmp(want.AmountBilled) == 0 &&
+		got.AmountSettled.Cmp(want.AmountSettled) == 0 &&
+		got.Protocol == want.Protocol
+	fmt.Println("event matches anchored statement:", matches)
 
 	// Output:
-	// operator: GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A
-	// version: 1
-	// effective_ledger: 4612165
-	// schedule_hash: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
+	// zero value: seq=0 billed=<nil> protocol=""
+	// event matches anchored statement: true
+}
+
+// ExampleStatementDisputeEvent compares a dispute event with the dispute
+// the caller opened. A caller never builds a StatementDisputeEvent to send:
+// the contract emits one, and DecodeStatementDisputeEvent fills it in from
+// EventInfo.Value. The literal below is what a caller (a reconciler, for
+// example) writes to say which dispute it expects to see. Every field comes
+// from the OpenDispute call: Consumer is the signer's address, and
+// Operator, Seq and ReasonHash are its arguments, naming the statement
+// being disputed. The zero value's all-zero ReasonHash means "not decoded",
+// not a real reason hash.
+func ExampleStatementDisputeEvent() {
+	var zero StatementDisputeEvent
+	fmt.Printf("zero value: seq=%d consumer=%q reason_hash_set=%t\n", zero.Seq, zero.Consumer, zero.ReasonHash != [32]byte{})
+
+	var reasonHash [32]byte
+	if _, err := hex.Decode(reasonHash[:], []byte("79feb12e0b0f93c8e2657be04712fe001bbb2e11bf5df5ce5f3e6f29e9a18e85")); err != nil {
+		log.Fatal(err)
+	}
+	want := StatementDisputeEvent{
+		Operator:   "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A", // OpenDispute's operator argument
+		Consumer:   "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG", // OpenDispute's signer
+		Seq:        2,
+		ReasonHash: reasonHash,
+	}
+
+	// A genuine ("statement", "dispute") event's Value, captured live from
+	// testnet (fixture events_statement_registry).
+	const disputeValueB64 = "AAAAEAAAAAEAAAAEAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAASAAAAAAAAAACtXWITvZ/9QnTuL9KzW/xEfHokr4K/TUEhRQ7HUBTv7wAAAAUAAAAAAAAAAgAAAA0AAAAgef6xLgsPk8jiZXvgRxL+ABu7LhG/XfXOXz5vKemhjoU="
+	got, err := DecodeStatementDisputeEvent(disputeValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("event matches opened dispute:", *got == want)
+
+	// Output:
+	// zero value: seq=0 consumer="" reason_hash_set=false
+	// event matches opened dispute: true
+}
+
+// ExampleStatementResolveEvent compares a resolve event with the resolution
+// the caller submitted. A caller never builds a StatementResolveEvent to
+// send: the contract emits one, and DecodeStatementResolveEvent fills it in
+// from EventInfo.Value. Operator is ResolveDispute's signer, and Seq,
+// ResolutionHash and AmountCredited are its arguments. Consumer is not a
+// ResolveDispute argument: the contract fills it in from the disputed
+// statement, so the caller takes it from that statement (or its dispute
+// event). The zero value's nil AmountCredited means "not decoded", not a
+// zero credit — compare with Cmp only after decoding.
+func ExampleStatementResolveEvent() {
+	var zero StatementResolveEvent
+	fmt.Printf("zero value: seq=%d credited=%v\n", zero.Seq, zero.AmountCredited)
+
+	var resolutionHash [32]byte
+	if _, err := hex.Decode(resolutionHash[:], []byte("f00e629c680893277a2c9ebf91ce2715981a61962b865b406c4b3dc3eed2422c")); err != nil {
+		log.Fatal(err)
+	}
+	want := StatementResolveEvent{
+		Operator:       "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A", // ResolveDispute's signer
+		Consumer:       "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG", // from the disputed statement
+		Seq:            2,
+		ResolutionHash: resolutionHash,
+		AmountCredited: big.NewInt(200),
+	}
+
+	// A genuine ("statement", "resolve") event's Value, captured live from
+	// testnet (seq 2 of the anchor→dispute→resolve cycle in
+	// testdata/stellar/events_statement_registry.json).
+	const resolveValueB64 = "AAAAEAAAAAEAAAAFAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAASAAAAAAAAAACtXWITvZ/9QnTuL9KzW/xEfHokr4K/TUEhRQ7HUBTv7wAAAAUAAAAAAAAAAgAAAA0AAAAg8A5inGgIkyd6LJ6/kc4nFZgaYZYrhltAbEs9w+7SQiwAAAAKAAAAAAAAAAAAAAAAAAAAyA=="
+	got, err := DecodeStatementResolveEvent(resolveValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	matches := got.Operator == want.Operator &&
+		got.Consumer == want.Consumer &&
+		got.Seq == want.Seq &&
+		got.ResolutionHash == want.ResolutionHash &&
+		got.AmountCredited.Cmp(want.AmountCredited) == 0
+	fmt.Println("event matches submitted resolution:", matches)
+
+	// Output:
+	// zero value: seq=0 credited=<nil>
+	// event matches submitted resolution: true
 }

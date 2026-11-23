@@ -262,6 +262,23 @@ func TestMigrate_NoMigrationsIsANoop(t *testing.T) {
 	}
 }
 
+// ExampleMigration constructs a Migration the way a caller would, setting every
+// field explicitly. The package does not fill in any fields from a zero value —
+// all four fields (Version, Name, Filename, SQL) must be provided by the caller.
+func ExampleMigration() {
+	m := Migration{
+		Version:  1,
+		Name:     "create_widgets",
+		Filename: "0001_create_widgets.sql",
+		SQL:      `CREATE TABLE widgets (id BIGSERIAL PRIMARY KEY, name TEXT NOT NULL)`,
+	}
+	_ = m
+
+	// No // Output: is asserted because Migration is a plain data structure
+	// and its fields are entirely caller-specified; there is no deterministic
+	// output to assert.
+}
+
 func TestMigrate_ConcurrentStartups(t *testing.T) {
 	pool := testPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
