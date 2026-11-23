@@ -645,3 +645,218 @@ func ExampleSimulateTransactionResult() {
 	// needs restore: false
 	// simulation failed: Could not unmarshal transaction
 }
+
+// ExampleEventsPagination shows the two ways a caller fills in an
+// EventsPagination, matching the indexer's ingestion loop. The first page
+// carries only a Limit, with the ledger range on GetEventsParams.StartLedger.
+// Every later page carries the Cursor copied from the previous
+// GetEventsResult, and no StartLedger, because the RPC API takes a ledger
+// range or a cursor but not both. The client does not check that rule; the
+// RPC node rejects a request that breaks it. Both fields are omitempty, so
+// the zero value sends an empty object and the node uses its default page
+// size.
+func ExampleEventsPagination() {
+	zero, err := json.Marshal(EventsPagination{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("zero value:", string(zero))
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json) for both pages, so the second
+	// request is only shown, not paged forward for real.
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+
+	first := GetEventsParams{
+		StartLedger: 4611150,
+		Pagination:  &EventsPagination{Limit: 3},
+	}
+	wire, err := json.Marshal(first.Pagination)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("first page:", string(wire))
+
+	page, err := client.GetEvents(context.Background(), first)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// The next page resumes from the result's Cursor. StartLedger is left
+	// at zero so it is omitted from the request.
+	next := GetEventsParams{
+		Pagination: &EventsPagination{Cursor: page.Cursor, Limit: 3},
+	}
+	wire, err = json.Marshal(next)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("next page:", string(wire))
+
+	// Output:
+	// zero value: {}
+	// first page: {"limit":3}
+	// next page: {"pagination":{"cursor":"0019804738446950400-0000000002","limit":3}}
+}
+
+// ExampleGetEventsParams builds the request GetEvents sends, in the two
+// forms the indexer uses. Every field is optional and omitempty, so the zero
+// value marshals to an empty object. That is not a usable request: with no
+// StartLedger and no Cursor the RPC node has nowhere to start, and rejects
+// it. A caller sets exactly one starting point: StartLedger for the first
+// call, or Pagination.Cursor to resume. Filters narrows the call to the
+// contracts the caller cares about. XDRFormat "base64" asks for the default
+// encoding that EventInfo.Topic and EventInfo.Value are decoded from.
+func ExampleGetEventsParams() {
+	zero, err := json.Marshal(GetEventsParams{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("zero value:", string(zero))
+
+	filters := []EventFilter{{
+		Type:        "contract",
+		ContractIDs: []string{"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"},
+	}}
+
+	// First call: start from a ledger.
+	fromLedger := GetEventsParams{
+		StartLedger: 4611150,
+		Filters:     filters,
+		Pagination:  &EventsPagination{Limit: 3},
+		XDRFormat:   "base64",
+	}
+	wire, err := json.Marshal(fromLedger)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("from ledger:", string(wire))
+
+	// Later calls: resume from a stored cursor instead of a ledger.
+	fromCursor := GetEventsParams{
+		Filters:    filters,
+		Pagination: &EventsPagination{Cursor: "0019804738446950400-0000000002", Limit: 3},
+		XDRFormat:  "base64",
+	}
+	wire, err = json.Marshal(fromCursor)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("from cursor:", string(wire))
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json).
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+	result, err := client.GetEvents(context.Background(), fromLedger)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("events:", len(result.Events))
+
+	// Output:
+	// zero value: {}
+	// from ledger: {"startLedger":4611150,"filters":[{"type":"contract","contractIds":["CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"]}],"pagination":{"limit":3},"xdrFormat":"base64"}
+	// from cursor: {"filters":[{"type":"contract","contractIds":["CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"]}],"pagination":{"cursor":"0019804738446950400-0000000002","limit":3},"xdrFormat":"base64"}
+	// events: 3
+}
+
+// ExampleEventInfo reads EventInfos as GetEvents fills them in from a
+// recorded testnet response. A caller never sets any field; the RPC node
+// sets all of them. Topic and Value are base64 ScVals, not plain strings,
+// so a caller decodes them before use (MatchesTopic does this for
+// all-Symbol topics). ID is unique per event and is what the indexer
+// de-duplicates on. InSuccessfulContractCall matters: an event can be
+// emitted by a call that later failed, and its effects were rolled back, so
+// a caller must not treat it as something that happened on chain. The zero
+// value has an empty ID and no topics, so it is not an event.
+func ExampleEventInfo() {
+	var zero EventInfo
+	fmt.Printf("zero value: id=%q topics=%d\n", zero.ID, len(zero.Topic))
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json): three fee events from the native
+	// asset contract, topic ("fee", payer) and value i128 stroops.
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+	result, err := client.GetEvents(context.Background(), GetEventsParams{
+		StartLedger: 4611150,
+		Pagination:  &EventsPagination{Limit: 3},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, ev := range result.Events {
+		if !ev.InSuccessfulContractCall {
+			fmt.Println("skip", ev.ID, "(call failed)")
+			continue
+		}
+		name, err := UnmarshalScValBase64(ev.Topic[0])
+		if err != nil {
+			log.Fatal(err)
+		}
+		sym, err := DecodeSymbol(name)
+		if err != nil {
+			log.Fatal(err)
+		}
+		val, err := UnmarshalScValBase64(ev.Value)
+		if err != nil {
+			log.Fatal(err)
+		}
+		amount, err := DecodeI128(val)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s ledger=%d %s=%s\n", ev.ID, ev.Ledger, sym, amount)
+	}
+
+	// Output:
+	// zero value: id="" topics=0
+	// skip 0019804738446950400-0000000000 (call failed)
+	// 0019804738446950400-0000000001 ledger=4611150 fee=26931
+	// 0019804738446950400-0000000002 ledger=4611150 fee=17211
+}
+
+// ExampleGetEventsResult reads a GetEventsResult as GetEvents fills it in
+// from a recorded testnet response. A caller never sets any field. Cursor is
+// the field a caller keeps: it is where the next call resumes (via
+// EventsPagination.Cursor), and the indexer stores it in the same
+// transaction as the events it read. OldestLedger and LatestLedger bound
+// the node's retention window; a StartLedger below OldestLedger cannot be
+// served. The close times are unix seconds carried as strings. The zero
+// value has an empty Cursor and no events, so a caller only reads a result
+// that came back with a nil error.
+func ExampleGetEventsResult() {
+	var zero GetEventsResult
+	fmt.Printf("zero value: events=%d cursor=%q\n", len(zero.Events), zero.Cursor)
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json).
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+	result, err := client.GetEvents(context.Background(), GetEventsParams{
+		StartLedger: 4611150,
+		Pagination:  &EventsPagination{Limit: 3},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("events:", len(result.Events))
+	fmt.Println("resume from:", result.Cursor)
+	fmt.Printf("retention: ledgers %d..%d\n", result.OldestLedger, result.LatestLedger)
+
+	closeUnix, err := strconv.ParseInt(result.LatestLedgerCloseTime, 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("latest closed at:", time.Unix(closeUnix, 0).UTC().Format(time.RFC3339))
+
+	// Output:
+	// zero value: events=0 cursor=""
+	// events: 3
+	// resume from: 0019804738446950400-0000000002
+	// retention: ledgers 4490271..4611230
+	// latest closed at: 2026-09-10T22:35:37Z
+}
