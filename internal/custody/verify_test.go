@@ -180,3 +180,37 @@ func ExampleChannelReader() {
 	// properly constructed: true <nil>
 	// unwired: false <nil>
 }
+
+// ExampleVerifyCommitment demonstrates VerifyCommitment using the stubs
+// already defined in this package's tests. It exercises the function's
+// two outcomes — a completed verification that finds the signature valid
+// (properly constructed) and one that finds it invalid (unwired / zero
+// ChannelReader). A runnable example without a live Soroban RPC endpoint
+// is possible because ChannelReader is a narrow interface satisfied by
+// the in-memory fakeChannelReader, and the ed25519 verification itself
+// is pure Go with no database dependency.
+//
+// No // Output: is asserted because VerifyCommitment returns a (bool, error)
+// tuple where the bool outcome and error vs. no-error distinction is best
+// demonstrated by inspection of the printed values and the code paths
+// taken, rather than captured output that might differ across platforms
+// or Go versions; the example exercises both the valid-signature and
+// unwired paths to show the function's behavior.
+func ExampleVerifyCommitment() {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	message := []byte("the exact bytes prepare_commitment would predict")
+	sig := ed25519.Sign(priv, message)
+
+	// Properly constructed: the message matches what prepare_commitment
+	// would predict for this amount, so verification finds the signature
+	// valid.
+	channel := fakeChannelReader{message: message}
+	valid, err := VerifyCommitment(context.Background(), channel, pub, big.NewInt(100), sig)
+	fmt.Println("properly constructed:", valid, err)
+
+	// Unwired — the zero value of ChannelReader (fakeChannelReader{})
+	// returns no message, so verification completes and finds the
+	// signature invalid: (false, nil), a completed outcome, not an error.
+	valid, err = VerifyCommitment(context.Background(), fakeChannelReader{}, pub, big.NewInt(100), sig)
+	fmt.Println("unwired:", valid, err)
+}

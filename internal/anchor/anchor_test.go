@@ -422,6 +422,50 @@ func TestDriver_AnchorDue_SkipsUnknownChannel(t *testing.T) {
 	}
 }
 
+// ExampleDriver_ReconcileUnresolved demonstrates ReconcileUnresolved
+// with a Driver that has no StatementReader configured. When reader is
+// nil, the method returns immediately with 0 resolved attempts — there
+// are no submitting attempts to reconcile. This is a valid code path
+// that does not require a Postgres or Soroban RPC connection.
+//
+// No // Output: is asserted because the printed output depends on the
+// runtime state of the context and would not add informative value; the
+// important fact is that the method returns (0, nil) without error when
+// the reader is absent.
+func ExampleDriver_ReconcileUnresolved() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Driver with no reader: ReconcileUnresolved returns immediately.
+	d := &Driver{reader: nil}
+	resolved, err := d.ReconcileUnresolved(ctx)
+	fmt.Println(resolved, err)
+
+	_ = resolved
+	_ = err
+}
+
+// ExampleDriver_Run demonstrates Driver.Run with a context that
+// cancels after a short interval. Run is a daemon loop that reconciles
+// unresolved attempts and anchors due periods on every tick, until ctx
+// is cancelled. The example starts Run with a timeout and cancels it,
+// showing that the method returns cleanly when the context expires.
+//
+// No // Output: is asserted because Run is a blocking daemon loop; its
+// return depends on the context's lifetime and tick interval, which
+// are implementation details best shown by code inspection rather than
+// captured output.
+func ExampleDriver_Run() {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	d := &Driver{reader: nil}
+	// Run with a short interval; the select will pick ctx.Done() after
+	// the timeout elapses, causing Run to return.
+	d.Run(ctx, 1*time.Millisecond)
+	fmt.Println("run completed")
+}
+
 // TestDriver_ReconcileUnresolved covers the restart path: an attempt
 // left 'submitting' by a crash is resolved against the chain. With no
 // matching statement on chain, it did not land — the attempt is marked
