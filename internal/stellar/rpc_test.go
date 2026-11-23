@@ -699,3 +699,65 @@ func ExampleEventsPagination() {
 	// first page: {"limit":3}
 	// next page: {"pagination":{"cursor":"0019804738446950400-0000000002","limit":3}}
 }
+
+// ExampleGetEventsParams builds the request GetEvents sends, in the two
+// forms the indexer uses. Every field is optional and omitempty, so the zero
+// value marshals to an empty object. That is not a usable request: with no
+// StartLedger and no Cursor the RPC node has nowhere to start, and rejects
+// it. A caller sets exactly one starting point: StartLedger for the first
+// call, or Pagination.Cursor to resume. Filters narrows the call to the
+// contracts the caller cares about. XDRFormat "base64" asks for the default
+// encoding that EventInfo.Topic and EventInfo.Value are decoded from.
+func ExampleGetEventsParams() {
+	zero, err := json.Marshal(GetEventsParams{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("zero value:", string(zero))
+
+	filters := []EventFilter{{
+		Type:        "contract",
+		ContractIDs: []string{"CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"},
+	}}
+
+	// First call: start from a ledger.
+	fromLedger := GetEventsParams{
+		StartLedger: 4611150,
+		Filters:     filters,
+		Pagination:  &EventsPagination{Limit: 3},
+		XDRFormat:   "base64",
+	}
+	wire, err := json.Marshal(fromLedger)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("from ledger:", string(wire))
+
+	// Later calls: resume from a stored cursor instead of a ledger.
+	fromCursor := GetEventsParams{
+		Filters:    filters,
+		Pagination: &EventsPagination{Cursor: "0019804738446950400-0000000002", Limit: 3},
+		XDRFormat:  "base64",
+	}
+	wire, err = json.Marshal(fromCursor)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("from cursor:", string(wire))
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json).
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+	result, err := client.GetEvents(context.Background(), fromLedger)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("events:", len(result.Events))
+
+	// Output:
+	// zero value: {}
+	// from ledger: {"startLedger":4611150,"filters":[{"type":"contract","contractIds":["CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"]}],"pagination":{"limit":3},"xdrFormat":"base64"}
+	// from cursor: {"filters":[{"type":"contract","contractIds":["CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"]}],"pagination":{"cursor":"0019804738446950400-0000000002","limit":3},"xdrFormat":"base64"}
+	// events: 3
+}
