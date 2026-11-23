@@ -674,3 +674,86 @@ func ExampleStatementAnchorEvent() {
 	// zero value: seq=0 billed=<nil> protocol=""
 	// event matches anchored statement: true
 }
+
+// ExampleStatementDisputeEvent compares a dispute event with the dispute
+// the caller opened. A caller never builds a StatementDisputeEvent to send:
+// the contract emits one, and DecodeStatementDisputeEvent fills it in from
+// EventInfo.Value. The literal below is what a caller (a reconciler, for
+// example) writes to say which dispute it expects to see. Every field comes
+// from the OpenDispute call: Consumer is the signer's address, and
+// Operator, Seq and ReasonHash are its arguments, naming the statement
+// being disputed. The zero value's all-zero ReasonHash means "not decoded",
+// not a real reason hash.
+func ExampleStatementDisputeEvent() {
+	var zero StatementDisputeEvent
+	fmt.Printf("zero value: seq=%d consumer=%q reason_hash_set=%t\n", zero.Seq, zero.Consumer, zero.ReasonHash != [32]byte{})
+
+	var reasonHash [32]byte
+	if _, err := hex.Decode(reasonHash[:], []byte("79feb12e0b0f93c8e2657be04712fe001bbb2e11bf5df5ce5f3e6f29e9a18e85")); err != nil {
+		log.Fatal(err)
+	}
+	want := StatementDisputeEvent{
+		Operator:   "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A", // OpenDispute's operator argument
+		Consumer:   "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG", // OpenDispute's signer
+		Seq:        2,
+		ReasonHash: reasonHash,
+	}
+
+	// A genuine ("statement", "dispute") event's Value, captured live from
+	// testnet (fixture events_statement_registry).
+	const disputeValueB64 = "AAAAEAAAAAEAAAAEAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAASAAAAAAAAAACtXWITvZ/9QnTuL9KzW/xEfHokr4K/TUEhRQ7HUBTv7wAAAAUAAAAAAAAAAgAAAA0AAAAgef6xLgsPk8jiZXvgRxL+ABu7LhG/XfXOXz5vKemhjoU="
+	got, err := DecodeStatementDisputeEvent(disputeValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("event matches opened dispute:", *got == want)
+
+	// Output:
+	// zero value: seq=0 consumer="" reason_hash_set=false
+	// event matches opened dispute: true
+}
+
+// ExampleStatementResolveEvent compares a resolve event with the resolution
+// the caller submitted. A caller never builds a StatementResolveEvent to
+// send: the contract emits one, and DecodeStatementResolveEvent fills it in
+// from EventInfo.Value. Operator is ResolveDispute's signer, and Seq,
+// ResolutionHash and AmountCredited are its arguments. Consumer is not a
+// ResolveDispute argument: the contract fills it in from the disputed
+// statement, so the caller takes it from that statement (or its dispute
+// event). The zero value's nil AmountCredited means "not decoded", not a
+// zero credit — compare with Cmp only after decoding.
+func ExampleStatementResolveEvent() {
+	var zero StatementResolveEvent
+	fmt.Printf("zero value: seq=%d credited=%v\n", zero.Seq, zero.AmountCredited)
+
+	var resolutionHash [32]byte
+	if _, err := hex.Decode(resolutionHash[:], []byte("f00e629c680893277a2c9ebf91ce2715981a61962b865b406c4b3dc3eed2422c")); err != nil {
+		log.Fatal(err)
+	}
+	want := StatementResolveEvent{
+		Operator:       "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A", // ResolveDispute's signer
+		Consumer:       "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG", // from the disputed statement
+		Seq:            2,
+		ResolutionHash: resolutionHash,
+		AmountCredited: big.NewInt(200),
+	}
+
+	// A genuine ("statement", "resolve") event's Value, captured live from
+	// testnet (seq 2 of the anchor→dispute→resolve cycle in
+	// testdata/stellar/events_statement_registry.json).
+	const resolveValueB64 = "AAAAEAAAAAEAAAAFAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAASAAAAAAAAAACtXWITvZ/9QnTuL9KzW/xEfHokr4K/TUEhRQ7HUBTv7wAAAAUAAAAAAAAAAgAAAA0AAAAg8A5inGgIkyd6LJ6/kc4nFZgaYZYrhltAbEs9w+7SQiwAAAAKAAAAAAAAAAAAAAAAAAAAyA=="
+	got, err := DecodeStatementResolveEvent(resolveValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	matches := got.Operator == want.Operator &&
+		got.Consumer == want.Consumer &&
+		got.Seq == want.Seq &&
+		got.ResolutionHash == want.ResolutionHash &&
+		got.AmountCredited.Cmp(want.AmountCredited) == 0
+	fmt.Println("event matches submitted resolution:", matches)
+
+	// Output:
+	// zero value: seq=0 credited=<nil>
+	// event matches submitted resolution: true
+}
