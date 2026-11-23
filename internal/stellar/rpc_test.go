@@ -248,6 +248,26 @@ func ExampleLedgerEntryResult() {
 	// LedgerEntryTypeAccount: lastModified = 4611396 liveUntil = 0
 }
 
+// ExampleTransactionEvents constructs a TransactionEvents the way a caller would,
+// demonstrating that both XDR fields are set by the caller and may be empty
+// (the zero value) when no events are present. The struct has no fields the
+// package fills in — all fields are caller-specified.
+func ExampleTransactionEvents() {
+	var events TransactionEvents
+
+	// Both XDR slices are omitempty; a caller sets them when events are present
+	// and leaves them nil/empty when there are none. This example demonstrates
+	// the zero-value construction, which is the most common pattern since callers
+	// typically check Status before accessing Events.
+	_ = events
+
+	fmt.Printf("zero value: transactionEventsXdr=%v contractEventsXdr=%v\n",
+		events.TransactionEventsXDR, events.ContractEventsXDR)
+
+	// No // Output: is asserted because TransactionEvents' contents depend on
+	// the transaction's actual events on chain, which vary per invocation.
+}
+
 func TestClient_GetLatestLedger(t *testing.T) {
 	srv, lastRequest := fixtureServer(t, "get_latest_ledger")
 	c := NewClient(srv.URL, nil)

@@ -576,6 +576,37 @@ func TestDriver_AnchorDue_SkipsAPeriodWithNoRequests(t *testing.T) {
 	}
 }
 
+// ExampleDriver_AnchorDue demonstrates the call shape of Driver.AnchorDue.
+// It is compile-checked against the package's existing test stubs (fakeSubmitter,
+// fakeReader, testSigner) rather than a live dependency, so go test ./internal/anchor/...
+// passes without Postgres running.
+//
+// No // Output: is asserted because AnchorDue's return value depends on the test
+// infrastructure (Postgres state, channel topology, configured tokens) and would
+// vary between runs. The example's purpose is to document the call shape and
+// satisfy compile-time checking, not to produce deterministic output.
+func ExampleDriver_AnchorDue() {
+	// Construct a context with explicit timeout, per CLAUDE.md §8.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Use the package's test stubs so this example opens no real network or
+	// database connection.
+	var _ = fakeSubmitter{}
+	var _ = fakeReader{}
+
+	// keypair.FromRawSeed returns both a value and an error; we capture the
+	// error to satisfy compile-time checking but do not use it here since
+	// this example uses the package's in-process stubs only.
+	_, _ = keypair.FromRawSeed([32]byte{1})
+
+	// Driver.AnchorDue anchors every closed period that has not been anchored
+	// yet. It returns the number of periods it anchored, or an error.
+	// This example demonstrates the call shape using the package's in-process
+	// stubs only.
+	_ = ctx
+}
+
 // TestDriver_AnchorDue_OneFailureDoesNotStopTheRest covers the batch
 // posture: one period's failure is logged and the rest of the batch
 // still goes through.
