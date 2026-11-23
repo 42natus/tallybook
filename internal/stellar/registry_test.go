@@ -504,3 +504,86 @@ func ExampleStatement() {
 	// caller fields match: true
 	// after anchoring: anchoredLedger=4612538 status="Anchored"
 }
+
+// ExampleStatementRegistry builds a binding the way a caller does — with
+// NewStatementRegistry, setting all three fields — and reads one statement
+// through it. The zero value is not usable: it has no Client to send
+// requests with, no ContractID to address, and no NetworkPassphrase to sign
+// transactions for. The RPC endpoint here replays the recorded testnet
+// get_statement response for seq 3 (testdata/stellar/registry_get_statement.json);
+// a real caller points NewClient at the network's RPC URL instead.
+func ExampleStatementRegistry() {
+	var zero StatementRegistry
+	fmt.Printf("zero value: client=%t contract=%q passphrase=%q\n", zero.Client != nil, zero.ContractID, zero.NetworkPassphrase)
+
+	handler, err := sequencedFixtureHandler(map[string][]string{
+		"simulateTransaction": {"registry_get_statement"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+
+	registry := NewStatementRegistry(
+		NewClient(srv.URL, nil),
+		"CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M",
+		"Test SDF Network ; September 2015",
+	)
+
+	stmt, err := registry.GetStatement(context.Background(), "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A", 3)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("statement 3: consumer=%s billed=%s status=%s\n", stmt.Consumer, stmt.AmountBilled, stmt.Status)
+
+	// Output:
+	// zero value: client=false contract="" passphrase=""
+	// statement 3: consumer=GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG billed=3000 status=Anchored
+}
+
+// ExampleStatus reads a statement's Status the way a caller does: from a
+// Statement that GetStatement decoded. As Status's doc comment says, the
+// contract sets it and it is never passed as an argument, so a caller only
+// ever compares it against the StatusAnchored, StatusDisputed and
+// StatusResolved constants — never constructs one to send. The zero value
+// "" matches none of them: it means the Statement was not decoded from the
+// contract, not that the statement is in some default state. The RPC
+// endpoint replays two recorded testnet get_statement responses for seq 3,
+// before and after its dispute was resolved.
+func ExampleStatus() {
+	var zero Status
+	fmt.Printf("zero value: %q anchored=%t\n", zero, zero == StatusAnchored)
+
+	for _, fixture := range []string{"registry_get_statement", "registry_get_statement_resolved"} {
+		handler, err := sequencedFixtureHandler(map[string][]string{
+			"simulateTransaction": {fixture},
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		srv := httptest.NewServer(handler)
+		registry := NewStatementRegistry(NewClient(srv.URL, nil), "CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M", "Test SDF Network ; September 2015")
+
+		stmt, err := registry.GetStatement(context.Background(), "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A", 3)
+		srv.Close()
+		if err != nil {
+			log.Fatal(err)
+		}
+		switch stmt.Status {
+		case StatusAnchored:
+			fmt.Println("Anchored: no dispute opened")
+		case StatusDisputed:
+			fmt.Println("Disputed: awaiting resolve_dispute")
+		case StatusResolved:
+			fmt.Println("Resolved: dispute closed")
+		default:
+			fmt.Printf("unknown status %q\n", stmt.Status)
+		}
+	}
+
+	// Output:
+	// zero value: "" anchored=false
+	// Anchored: no dispute opened
+	// Resolved: dispute closed
+}
