@@ -626,3 +626,51 @@ func FuzzDecodeEvents(f *testing.F) {
 		}
 	})
 }
+
+// ExampleStatementAnchorEvent compares an anchor event with the statement
+// the caller anchored. A caller never builds a StatementAnchorEvent to
+// send: the contract emits one, and DecodeStatementAnchorEvent fills it in
+// from EventInfo.Value. The literal below is what a caller (a reconciler,
+// for example) writes to say which anchor it expects to see. Every field
+// comes from the Anchor call, except Seq, which the contract assigns and
+// Anchor returns. The event has only seven of Statement's fields, so it
+// confirms which statement was anchored; GetStatement gives the full record.
+// The zero value's nil amounts mean "not decoded", not zero.
+func ExampleStatementAnchorEvent() {
+	var zero StatementAnchorEvent
+	fmt.Printf("zero value: seq=%d billed=%v protocol=%q\n", zero.Seq, zero.AmountBilled, zero.Protocol)
+
+	var usageRoot [32]byte
+	if _, err := hex.Decode(usageRoot[:], []byte("81a124533e675e367701982b81e8dfd60c848bfb7d031933bfbc4b2fb04d4225")); err != nil {
+		log.Fatal(err)
+	}
+	want := StatementAnchorEvent{
+		Operator:      "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A",
+		Consumer:      "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG",
+		Seq:           2, // returned by Anchor
+		UsageRoot:     usageRoot,
+		AmountBilled:  big.NewInt(2000),
+		AmountSettled: big.NewInt(2000),
+		Protocol:      ProtocolX402,
+	}
+
+	// A genuine ("statement", "anchor") event's Value, captured live from
+	// testnet (fixture events_statement_registry).
+	const anchorValueB64 = "AAAAEAAAAAEAAAAHAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAASAAAAAAAAAACtXWITvZ/9QnTuL9KzW/xEfHokr4K/TUEhRQ7HUBTv7wAAAAUAAAAAAAAAAgAAAA0AAAAggaEkUz5nXjZ3AZgrgejf1gyEi/t9Axkzv7xLL7BNQiUAAAAKAAAAAAAAAAAAAAAAAAAH0AAAAAoAAAAAAAAAAAAAAAAAAAfQAAAAEAAAAAEAAAABAAAADwAAAARYNDAy"
+	got, err := DecodeStatementAnchorEvent(anchorValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	matches := got.Operator == want.Operator &&
+		got.Consumer == want.Consumer &&
+		got.Seq == want.Seq &&
+		got.UsageRoot == want.UsageRoot &&
+		got.AmountBilled.Cmp(want.AmountBilled) == 0 &&
+		got.AmountSettled.Cmp(want.AmountSettled) == 0 &&
+		got.Protocol == want.Protocol
+	fmt.Println("event matches anchored statement:", matches)
+
+	// Output:
+	// zero value: seq=0 billed=<nil> protocol=""
+	// event matches anchored statement: true
+}
