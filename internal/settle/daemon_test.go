@@ -265,3 +265,39 @@ func ExampleDaemon_Tick() {
 	}
 	fmt.Println("attempted:", attempted, "under deadline pressure:", underPressure)
 }
+
+// ExampleDaemon_Run shows how the settler binary drives the daemon: Run
+// ticks every interval (TB_SETTLER_TICK) until ctx is cancelled, tightens
+// to a short fixed interval while any channel is under deadline pressure,
+// and widens back once none is. A failed tick is logged and retried on
+// the next interval, never fatal — a stopped settler lets refund
+// deadlines approach with nothing being swept. Run has no return value;
+// it returns only when ctx is done.
+//
+// The pool, ledger source and channel factory are the same test stubs
+// ExampleDaemon_Tick uses. There is no // Output: line on purpose: Run's
+// only observable effects are settlements written to Postgres and slog
+// lines, neither of which an example can assert deterministically without
+// a live database. Without an Output line `go test` compiles the example
+// but does not run it, so the zero-value pool is never dialed. It is here
+// to pin the call shape: a signature change breaks the build. The
+// behaviour of each tick is covered by the TestDaemon_Tick_* tests above.
+func ExampleDaemon_Run() {
+	pool := &pgxpool.Pool{}
+	d := NewDaemon(pool, NewCalculator(pool), NewSubmitter(pool),
+		fixedFactory(newFakeLiveChannel("abc123", nil)), nil,
+		fakeLedgerSource{ledger: 4_590_000}, defaultPolicy())
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		d.Run(ctx, 30*time.Second)
+	}()
+
+	// Run returns once ctx is done: here when the timeout elapses, in
+	// production on SIGINT/SIGTERM.
+	<-done
+}
