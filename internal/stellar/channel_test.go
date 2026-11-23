@@ -512,3 +512,53 @@ func ExampleChannel_Refund() {
 	}
 	fmt.Println("refund submitted:", hash)
 }
+
+func ExampleChannel_Settle() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+
+	recipient, err := keypair.FromRawSeed([32]byte{1})
+	if err != nil {
+		fmt.Println("recipient key:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Use a self-contained stub server that returns a minimal success
+	// JSON-RPC response for the settle call. This protects against
+	// signature drift without contacting a live network or opening a
+	// database connection.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &req)
+
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "settle":
+			// Minimal successful settlement response.
+			_minimalSettleResponse := `{"jsonrpc":"2.0","id":1,"result":{"status":"SUCCESS","hash":"abc123"}}`
+			_, _ = w.Write([]byte(_minimalSettleResponse))
+		default:
+			http.Error(w, "unexpected method "+req.Method, http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	channel := NewChannel(NewClient(srv.URL, nil), contractID, networkPassphrase)
+	amount := big.NewInt(10_000)
+	var sig [64]byte
+
+	hash, err := channel.Settle(ctx, recipient, amount, sig)
+	if err != nil {
+		fmt.Println("settle:", err)
+		return
+	}
+	fmt.Println("settle submitted:", hash)
+}
