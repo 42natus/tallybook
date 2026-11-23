@@ -441,3 +441,66 @@ func ExampleStatementRegistry_ResolveDispute() {
 	// Output:
 	// tx=27b25cf1393f2d5904f606d4b55a71406f47fb3b90a67d067cdb9581eb3f231d
 }
+
+// ExampleStatement shows which Statement fields come from the caller and
+// which come from the contract. A caller never builds a Statement to send:
+// it passes the same values as Anchor arguments, and gets a Statement back
+// from GetStatement. So the literal below is what a caller writes to check
+// an anchored statement against what it meant to anchor. AnchoredLedger and
+// Status are left unset because the contract sets them (Status is never an
+// argument; see its doc comment). Channel stays nil because Protocol is not
+// ProtocolMppSession.
+func ExampleStatement() {
+	usageRoot := sha256.Sum256([]byte("registry-capture-usage-root"))
+	want := Statement{
+		Operator:         "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A",
+		Consumer:         "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG",
+		PeriodStart:      4612165,
+		PeriodEnd:        4612167,
+		UsageRoot:        usageRoot,
+		RequestCount:     9,
+		Token:            "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A",
+		AmountBilled:     big.NewInt(3000),
+		AmountSettled:    big.NewInt(3000),
+		PriceBookVersion: 1,
+		Protocol:         ProtocolX402,
+	}
+	fmt.Printf("before anchoring: anchoredLedger=%d status=%q channel=%t\n", want.AnchoredLedger, want.Status, want.Channel != nil)
+
+	// Replays the recorded testnet get_statement response for seq 3, the
+	// statement ExampleStatementRegistry_Anchor anchored
+	// (testdata/stellar/registry_get_statement.json).
+	handler, err := sequencedFixtureHandler(map[string][]string{
+		"simulateTransaction": {"registry_get_statement"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	registry := NewStatementRegistry(NewClient(srv.URL, nil), "CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M", "Test SDF Network ; September 2015")
+
+	got, err := registry.GetStatement(context.Background(), want.Operator, 3)
+	if err != nil {
+		log.Fatal(err)
+	}
+	matches := got.Operator == want.Operator &&
+		got.Consumer == want.Consumer &&
+		got.PeriodStart == want.PeriodStart &&
+		got.PeriodEnd == want.PeriodEnd &&
+		got.UsageRoot == want.UsageRoot &&
+		got.RequestCount == want.RequestCount &&
+		got.Token == want.Token &&
+		got.AmountBilled.Cmp(want.AmountBilled) == 0 &&
+		got.AmountSettled.Cmp(want.AmountSettled) == 0 &&
+		got.PriceBookVersion == want.PriceBookVersion &&
+		got.Protocol == want.Protocol &&
+		got.Channel == nil
+	fmt.Println("caller fields match:", matches)
+	fmt.Printf("after anchoring: anchoredLedger=%d status=%q\n", got.AnchoredLedger, got.Status)
+
+	// Output:
+	// before anchoring: anchoredLedger=0 status="" channel=false
+	// caller fields match: true
+	// after anchoring: anchoredLedger=4612538 status="Anchored"
+}

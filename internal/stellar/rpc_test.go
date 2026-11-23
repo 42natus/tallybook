@@ -546,3 +546,102 @@ func containsAll(s string, substrs ...string) bool {
 	}
 	return true
 }
+
+// ExampleSimulateTransactionParams builds the request SimulateTransaction
+// sends. Transaction is the only field a caller must set: a base64
+// TransactionEnvelope holding a single invokeHostFunction operation, which
+// is how invoke.go builds it. ResourceConfig, XDRFormat and AuthMode are
+// optional and omitempty, so leaving them unset means the RPC node falls
+// back to its own defaults, and they are not sent at all. The zero value
+// is not a usable request: it sends an empty transaction, which the node
+// rejects.
+func ExampleSimulateTransactionParams() {
+	zero, err := json.Marshal(SimulateTransactionParams{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("zero value:", string(zero))
+
+	// The envelope is a placeholder here; a real caller passes the
+	// base64-encoded envelope it just built (see invoke.go).
+	params := SimulateTransactionParams{Transaction: "AAAA"}
+	wire, err := json.Marshal(params)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("minimal:", string(wire))
+
+	// Optional tuning: extra instruction headroom for a contract call
+	// whose cost varies between simulation and submission.
+	params.ResourceConfig = &SimulateResourceConfig{InstructionLeeway: 1000000}
+	wire, err = json.Marshal(params)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("with leeway:", string(wire))
+
+	// Replays the recorded testnet simulateTransaction response
+	// (testdata/stellar/simulate_transaction_success.json).
+	client, stop := exampleFixtureClient("simulate_transaction_success")
+	defer stop()
+	result, err := client.SimulateTransaction(context.Background(), params)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("minResourceFee:", result.MinResourceFee)
+
+	// Output:
+	// zero value: {"transaction":""}
+	// minimal: {"transaction":"AAAA"}
+	// with leeway: {"transaction":"AAAA","resourceConfig":{"instructionLeeway":1000000}}
+	// minResourceFee: 90353
+}
+
+// ExampleSimulateTransactionResult reads two SimulateTransactionResults as
+// SimulateTransaction fills them in from recorded testnet responses. A
+// caller never sets any field; the RPC node sets all of them. The important
+// part is the Error field: a failed simulation still returns HTTP 200 with
+// no JSON-RPC error, so SimulateTransaction returns a nil Go error, and the
+// caller must check result.Error before trusting anything else in it. The
+// zero value has an empty Error, so on its own it looks like a success.
+// That is why a caller only reads a result that came back with a nil error,
+// and then checks Error on it.
+func ExampleSimulateTransactionResult() {
+	var zero SimulateTransactionResult
+	fmt.Printf("zero value: error=%q results=%d cost=%t\n", zero.Error, len(zero.Results), zero.Cost != nil)
+
+	for _, fixture := range []string{"simulate_transaction_success", "simulate_transaction_error"} {
+		client, stop := exampleFixtureClient(fixture)
+		result, err := client.SimulateTransaction(context.Background(), SimulateTransactionParams{Transaction: "AAAA"})
+		stop()
+		if err != nil {
+			// The simulation could not run at all (transport or JSON-RPC error).
+			log.Fatal(err)
+		}
+		if result.Error != "" {
+			// The simulation ran and failed.
+			fmt.Println("simulation failed:", result.Error)
+			continue
+		}
+		ret, err := UnmarshalScValBase64(result.Results[0].XDR)
+		if err != nil {
+			log.Fatal(err)
+		}
+		value, err := DecodeU32(ret)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("return value:", value)
+		fmt.Println("minResourceFee:", result.MinResourceFee)
+		fmt.Println("cpuInsns:", result.Cost.CPUInsns)
+		fmt.Println("needs restore:", result.RestorePreamble != nil)
+	}
+
+	// Output:
+	// zero value: error="" results=0 cost=false
+	// return value: 12
+	// minResourceFee: 90353
+	// cpuInsns: 1635562
+	// needs restore: false
+	// simulation failed: Could not unmarshal transaction
+}
