@@ -655,3 +655,50 @@ func ExampleAnchorer_BilledAmount() {
 	}
 	fmt.Println("amount billed:", billed, "amount settled:", settled)
 }
+
+// ExampleAnchorer_UnresolvedAttempts shows the restart step that comes
+// first, before any period is anchored again: list every period whose
+// anchor attempt is still 'submitting', then hand each one to
+// ReconcileAnchoring. §6's ordering rule 3 is why the order matters — an
+// attempt that actually landed must not be retried into a second
+// statement, and one that did not must not block a fresh attempt
+// forever. The IDs come back distinct and in ascending order, and an
+// empty slice with a nil error means there is nothing to reconcile. This
+// is the loop internal/anchor's Driver.ReconcileUnresolved runs.
+//
+// The pool and StatementReader are the package's own test stubs: an
+// empty fakeStatementReader stands in for statement_registry. There is no
+// // Output: line on purpose: UnresolvedAttempts is a single query against
+// the anchor_attempts table, so its result is whatever Postgres holds,
+// and an example cannot set that up without a live database. Without an
+// Output line `go test` compiles the example but does not run it, so the
+// zero-value pool is never dialed. It is here to pin the call shape: a
+// signature change breaks the build. The behaviour is covered by the
+// reconcile tests in anchor_idempotency_test.go.
+func ExampleAnchorer_UnresolvedAttempts() {
+	a := NewAnchorer(&pgxpool.Pool{})
+	statements := &fakeStatementReader{statements: map[uint64]*stellar.Statement{}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	ids, err := a.UnresolvedAttempts(ctx)
+	if err != nil {
+		fmt.Println("unresolved attempts:", err)
+		return
+	}
+	if len(ids) == 0 {
+		fmt.Println("no anchor attempts left in flight")
+		return
+	}
+	for _, id := range ids {
+		res, err := a.ReconcileAnchoring(ctx, id, statements)
+		if err != nil {
+			// One period's failure does not stop the rest; it stays
+			// unresolved and is picked up on the next restart.
+			fmt.Println("reconcile period", id, ":", err)
+			continue
+		}
+		fmt.Println("period", id, "resolved:", res.Resolved, "anchored:", res.Anchored)
+	}
+}
