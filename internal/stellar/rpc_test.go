@@ -526,3 +526,42 @@ func containsAll(s string, substrs ...string) bool {
 	}
 	return true
 }
+
+
+func ExampleGetTransactionResult() {
+	// Replays the recorded testnet getTransaction response
+	// (testdata/stellar/get_transaction_success.json).
+	client, stop := exampleFixtureClient("get_transaction_success")
+	defer stop()
+
+	// The hash of the transaction whose result we want.
+	hash := "a55f146e117abdd29fb6643168e10f03fca79a761091355ea03effff3d44739a"
+
+	result, err := client.GetTransaction(context.Background(), hash)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("status:", result.Status)
+	fmt.Println("txHash:", result.TxHash)
+	fmt.Println("latestLedger:", result.LatestLedger)
+	fmt.Println("latestLedgerCloseTime:", result.LatestLedgerCloseTime)
+	fmt.Println("oldestLedger:", result.OldestLedger)
+	fmt.Println("oldestLedgerCloseTime:", result.OldestLedgerCloseTime)
+	fmt.Println("applicationOrder:", result.ApplicationOrder)
+	fmt.Println("feeBump:", result.FeeBump)
+	fmt.Println("createdAt:", result.CreatedAt)
+	fmt.Println("ledger:", result.Ledger)
+
+	// Output:
+	// status: SUCCESS
+	// txHash: a55f146e117abdd29fb6643168e10f03fca79a761091355ea03effff3d44739a
+	// latestLedger: 4611230
+	// latestLedgerCloseTime: 1789079737
+	// oldestLedger: 4490271
+	// oldestLedgerCloseTime: 1788474942
+	// applicationOrder: 2
+	// feeBump: false
+	// createdAt: 1789079337
+	// ledger: 4611150
+}

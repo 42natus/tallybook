@@ -236,3 +236,26 @@ func ExampleNewPriceBook() {
 	// Test SDF Network ; September 2015
 	// true
 }
+
+func ExamplePriceBook() {
+	// Construct a PriceBook binding via NewPriceBook — all three fields
+	// are provided by the caller; the package stores them verbatim.
+	client := NewClient("https://soroban-testnet.stellar.org", nil)
+	pb := NewPriceBook(client, realPriceBookContractID, "Test SDF Network ; September 2015")
+
+	fmt.Println("ContractID:", pb.ContractID)
+	fmt.Println("NetworkPassphrase:", pb.NetworkPassphrase)
+	fmt.Println("Client is nil:", pb.Client == nil)
+
+	// Demonstrate usage: Latest only needs the operator argument; the
+	// binding stores the rest.
+	_, err := pb.Latest(context.Background(), realOperator)
+	if err != nil {
+		fmt.Println("Latest error (expected on first capture):", err)
+	}
+
+	// Output:
+	// ContractID: CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW
+	// NetworkPassphrase: Test SDF Network ; September 2015
+	// Client is nil: false
+}

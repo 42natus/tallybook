@@ -626,3 +626,28 @@ func FuzzDecodeEvents(f *testing.F) {
 		}
 	})
 }
+
+
+func ExamplePriceBookPublishEvent() {
+	// Construct the struct manually, setting every field a caller is
+	// required to set. The package does not fill in any fields.
+	var ev PriceBookPublishEvent
+	ev.Operator = "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A"
+	ev.Version = 1
+	// ScheduleHash is 32 bytes; use a known test value.
+	copy(ev.ScheduleHash[:], []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13,
+		0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20})
+	ev.EffectiveLedger = 4612165
+
+	fmt.Println("operator:", ev.Operator)
+	fmt.Println("version:", ev.Version)
+	fmt.Printf("effective_ledger: %d\n", ev.EffectiveLedger)
+	fmt.Println("schedule_hash:", hex.EncodeToString(ev.ScheduleHash[:]))
+
+	// Output:
+	// operator: GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A
+	// version: 1
+	// effective_ledger: 4612165
+	// schedule_hash: 0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20
+}
