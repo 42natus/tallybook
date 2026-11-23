@@ -818,3 +818,45 @@ func ExampleEventInfo() {
 	// 0019804738446950400-0000000001 ledger=4611150 fee=26931
 	// 0019804738446950400-0000000002 ledger=4611150 fee=17211
 }
+
+// ExampleGetEventsResult reads a GetEventsResult as GetEvents fills it in
+// from a recorded testnet response. A caller never sets any field. Cursor is
+// the field a caller keeps: it is where the next call resumes (via
+// EventsPagination.Cursor), and the indexer stores it in the same
+// transaction as the events it read. OldestLedger and LatestLedger bound
+// the node's retention window; a StartLedger below OldestLedger cannot be
+// served. The close times are unix seconds carried as strings. The zero
+// value has an empty Cursor and no events, so a caller only reads a result
+// that came back with a nil error.
+func ExampleGetEventsResult() {
+	var zero GetEventsResult
+	fmt.Printf("zero value: events=%d cursor=%q\n", len(zero.Events), zero.Cursor)
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json).
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+	result, err := client.GetEvents(context.Background(), GetEventsParams{
+		StartLedger: 4611150,
+		Pagination:  &EventsPagination{Limit: 3},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("events:", len(result.Events))
+	fmt.Println("resume from:", result.Cursor)
+	fmt.Printf("retention: ledgers %d..%d\n", result.OldestLedger, result.LatestLedger)
+
+	closeUnix, err := strconv.ParseInt(result.LatestLedgerCloseTime, 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("latest closed at:", time.Unix(closeUnix, 0).UTC().Format(time.RFC3339))
+
+	// Output:
+	// zero value: events=0 cursor=""
+	// events: 3
+	// resume from: 0019804738446950400-0000000002
+	// retention: ledgers 4490271..4611230
+	// latest closed at: 2026-09-10T22:35:37Z
+}
