@@ -645,3 +645,57 @@ func ExampleSimulateTransactionResult() {
 	// needs restore: false
 	// simulation failed: Could not unmarshal transaction
 }
+
+// ExampleEventsPagination shows the two ways a caller fills in an
+// EventsPagination, matching the indexer's ingestion loop. The first page
+// carries only a Limit, with the ledger range on GetEventsParams.StartLedger.
+// Every later page carries the Cursor copied from the previous
+// GetEventsResult, and no StartLedger, because the RPC API takes a ledger
+// range or a cursor but not both. The client does not check that rule; the
+// RPC node rejects a request that breaks it. Both fields are omitempty, so
+// the zero value sends an empty object and the node uses its default page
+// size.
+func ExampleEventsPagination() {
+	zero, err := json.Marshal(EventsPagination{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("zero value:", string(zero))
+
+	// Replays the recorded testnet getEvents response
+	// (testdata/stellar/get_events.json) for both pages, so the second
+	// request is only shown, not paged forward for real.
+	client, stop := exampleFixtureClient("get_events")
+	defer stop()
+
+	first := GetEventsParams{
+		StartLedger: 4611150,
+		Pagination:  &EventsPagination{Limit: 3},
+	}
+	wire, err := json.Marshal(first.Pagination)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("first page:", string(wire))
+
+	page, err := client.GetEvents(context.Background(), first)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// The next page resumes from the result's Cursor. StartLedger is left
+	// at zero so it is omitted from the request.
+	next := GetEventsParams{
+		Pagination: &EventsPagination{Cursor: page.Cursor, Limit: 3},
+	}
+	wire, err = json.Marshal(next)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("next page:", string(wire))
+
+	// Output:
+	// zero value: {}
+	// first page: {"limit":3}
+	// next page: {"pagination":{"cursor":"0019804738446950400-0000000002","limit":3}}
+}
