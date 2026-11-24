@@ -1,11 +1,16 @@
 package stellar
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/big"
+	"net/http"
 	"net/http/httptest"
 
 	"github.com/stellar/go-stellar-sdk/keypair"
@@ -147,4 +152,97 @@ func ExampleErrSimulationFailed() {
 	// simulation rejected: true
 	// message: Could not unmarshal transaction
 	// protocol error: false
+}
+
+// ExampleErrTransactionFailed shows how a caller gets an
+// ErrTransactionFailed: a write such as OpenDispute was accepted and
+// settled on chain, but with FAILED status instead of SUCCESS. The package
+// fills both fields: Hash is the submitted transaction's hash (also
+// returned alongside the error, so the caller can record it), and
+// ResultXDR is the TransactionResult the node reported, kept so the
+// on-chain reason can be decoded later. A caller never constructs one. It
+// matches with errors.As and keeps the hash, because a settled failure has
+// already used a sequence number and fee, and retrying it blindly is how a
+// fee gets paid twice for nothing. The zero value, with no hash, is never
+// returned by the package.
+//
+// Every response is the recorded testnet open_dispute flow
+// (testdata/stellar/registry_open_dispute_*.json) except getTransaction.
+// No FAILED settlement has been recorded, so that one response is written
+// inline. Its resultXdr is the TransactionResult a Soroban call that
+// traps settles with: 100 stroops charged, txFAILED, and one
+// invoke_host_function operation result of INVOKE_HOST_FUNCTION_TRAPPED.
+func ExampleErrTransactionFailed() {
+	var zero ErrTransactionFailed
+	fmt.Printf("zero value: hash=%q resultXDR=%q\n", zero.Hash, zero.ResultXDR)
+
+	const failedResultXDR = "AAAAAAAAAGT/////AAAAAQAAAAAAAAAY/////gAAAAA="
+	recorded, err := sequencedFixtureHandler(map[string][]string{
+		"getLedgerEntries":    {"registry_open_dispute_getledgerentries"},
+		"simulateTransaction": {"registry_open_dispute_simulate"},
+		"sendTransaction":     {"registry_open_dispute_send"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		var req struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.Method != "getTransaction" {
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			recorded.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      req.ID,
+			"result": map[string]any{
+				"status":       "FAILED",
+				"txHash":       "bd49814cf831b4143584892e9b5cc6a8c39d52b63c566211f0a14dd9771c918d",
+				"latestLedger": 4612540,
+				"ledger":       4612540,
+				"resultXdr":    failedResultXDR,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	registry := NewStatementRegistry(NewClient(srv.URL, nil), "CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M", "Test SDF Network ; September 2015")
+	consumer, err := keypair.ParseFull(registryConsumerSeed)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	hash, err := registry.OpenDispute(context.Background(), consumer, "GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A", 3, sha256.Sum256([]byte("registry-capture-reason")))
+
+	var txErr *ErrTransactionFailed
+	fmt.Println("failed on chain:", errors.As(err, &txErr))
+	fmt.Println("hash:", txErr.Hash)
+	fmt.Println("same hash returned:", hash == txErr.Hash)
+	var result xdr.TransactionResult
+	if err := xdr.SafeUnmarshalBase64(txErr.ResultXDR, &result); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("result:", result.Result.Code, "fee charged:", result.FeeCharged)
+	fmt.Println("operation:", (*result.Result.Results)[0].Tr.InvokeHostFunctionResult.Code)
+
+	// Output:
+	// zero value: hash="" resultXDR=""
+	// failed on chain: true
+	// hash: bd49814cf831b4143584892e9b5cc6a8c39d52b63c566211f0a14dd9771c918d
+	// same hash returned: true
+	// result: TransactionResultCodeTxFailed fee charged: 100
+	// operation: InvokeHostFunctionResultCodeInvokeHostFunctionTrapped
 }
