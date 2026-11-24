@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"net/http/httptest"
 
 	"github.com/stellar/go-stellar-sdk/keypair"
 	"github.com/stellar/go-stellar-sdk/xdr"
@@ -104,4 +105,46 @@ func ExampleBuildCommitment() {
 	fmt.Println(len(b))
 	// Output:
 	// 192
+}
+
+// ExampleErrSimulationFailed shows how a caller gets an ErrSimulationFailed:
+// the package returns it, and the caller matches it with errors.As. A
+// caller never constructs one. The package sets Message to
+// simulateTransaction's own "error" field, verbatim, when a simulation ran
+// but rejected the call. As the type's doc comment says, that is distinct
+// from an *RPCError (the request itself was malformed), so the two are
+// matched separately. Only the zero value is built by hand here, to show
+// that its Message is empty, which is never true of one the package
+// returns. The RPC endpoint replays a recorded simulateTransaction response
+// whose result carries an error (testdata/stellar/simulate_transaction_error.json).
+func ExampleErrSimulationFailed() {
+	var zero ErrSimulationFailed
+	fmt.Printf("zero value: message=%q\n", zero.Message)
+
+	handler, err := sequencedFixtureHandler(map[string][]string{
+		"simulateTransaction": {"simulate_transaction_error"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(handler)
+	defer srv.Close()
+	client := NewClient(srv.URL, nil)
+
+	_, err = SimulateCall(context.Background(), client,
+		"GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A",
+		"CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW",
+		"latest", nil)
+
+	var simErr *ErrSimulationFailed
+	fmt.Println("simulation rejected:", errors.As(err, &simErr))
+	fmt.Println("message:", simErr.Message)
+	var rpcErr *RPCError
+	fmt.Println("protocol error:", errors.As(err, &rpcErr))
+
+	// Output:
+	// zero value: message=""
+	// simulation rejected: true
+	// message: Could not unmarshal transaction
+	// protocol error: false
 }
