@@ -861,48 +861,322 @@ func ExampleGetEventsResult() {
 	// latest closed at: 2026-09-10T22:35:37Z
 }
 
-// ExampleClient builds a Client the way a caller does: with NewClient. Every
-// Client field is unexported, so a caller sets nothing directly. It passes
-// the RPC endpoint URL, and optionally an *http.Client, and the package
-// handles the rest. With nil, NewClient fills in a client bounded by
-// defaultTimeout, so a call whose ctx has no deadline still cannot hang
-// forever. The request-ID counter is the package's job too. The zero value
-// is not usable: it has no endpoint to send to and no *http.Client to send
-// with, so it is printed here and never called. The endpoint below replays
-// the recorded testnet getLatestLedger response
-// (testdata/stellar/get_latest_ledger.json). A real caller passes the
-// network's RPC URL, TB_STELLAR_RPC_URL.
-func ExampleClient() {
-	var zero Client
-	fmt.Printf("zero value: url=%q httpClient=%t\n", zero.url, zero.httpClient != nil)
+// ExampleSendTransactionResult reads a SendTransactionResult as
+// SendTransaction fills it in from a recorded response. A caller
+// sets none of these fields — every one of them comes from the node. The
+// field that matters is Status, for the reason the type's own doc comment
+// gives: PENDING means the node accepted the envelope for inclusion, not
+// that the invocation succeeded, so Hash is something to poll
+// GetTransaction with rather than a receipt.
+//
+// This example switches on all four documented constants. invoke.go does
+// not: it handles ERROR, PENDING and DUPLICATE and lets TRY_AGAIN_LATER
+// fall through to its default as an "unexpected status" error. So the
+// TRY_AGAIN_LATER arm below is the shape a caller writes, not a path
+// invoke.go takes today — worth knowing before assuming congestion is
+// retried on your behalf.
+//
+// ErrorResultXDR and DiagnosticEventsXDR are omitempty and arrive only
+// alongside an ERROR status, so on an accepted submission they are empty.
+// That is not missing data; it is a question the node had no reason to
+// answer. Every recorded sendTransaction fixture in testdata/stellar that
+// carries a Status at all carries PENDING, so the ERROR branch below is
+// shown as the code a caller writes rather than asserted against a response
+// invented to exercise it.
+//
+// A malformed envelope fails differently, and the difference is the last
+// thing this example shows: that is a JSON-RPC-level error, so
+// SendTransaction returns a nil result and a non-nil error wrapping
+// *RPCError. There is no Status to read in that case, which is why the
+// error is checked before the struct is touched at all.
+func ExampleSendTransactionResult() {
+	var zero SendTransactionResult
+	fmt.Printf("zero value: status=%q hash=%q errorResultXdr=%q\n", zero.Status, zero.Hash, zero.ErrorResultXDR)
 
-	body, err := os.ReadFile(filepath.Join("..", "..", "testdata", "stellar", "get_latest_ledger.json"))
+	// Replays testdata/stellar/send_transaction_pending.json. That file's
+	// README records it as taken from the official RPC method reference
+	// rather than captured live, because submitting a real transaction
+	// needs a funded, sequenced, signed envelope — so treat the hash and
+	// ledger below as the reference response's, not testnet's.
+	client, stop := exampleFixtureClient("send_transaction_pending")
+	result, err := client.SendTransaction(context.Background(), "AAAA")
+	stop()
 	if err != nil {
 		log.Fatal(err)
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(body)
-	}))
-	defer srv.Close()
 
-	// Without an *http.Client, the package fills one in.
-	defaulted := NewClient(srv.URL, nil)
-	fmt.Println("nil httpClient -> timeout:", defaulted.httpClient.Timeout)
+	switch result.Status {
+	case SendTransactionStatusPending, SendTransactionStatusDuplicate:
+		// Queued for inclusion. Nothing has settled yet.
+		fmt.Println("accepted:", result.Status)
+	case SendTransactionStatusError:
+		// Refused outright; ErrorResultXDR is a base64 TransactionResult
+		// saying why, and is the only status that populates it.
+		fmt.Println("rejected:", result.ErrorResultXDR)
+	case SendTransactionStatusTryAgain:
+		// The node is congested and the envelope stays valid, so a caller
+		// may resubmit it. Note invoke.go does not reach this arm; see
+		// above.
+		fmt.Println("retry later")
+	default:
+		fmt.Println("unexpected status:", result.Status)
+	}
 
-	// With one, the caller's client is used as given.
-	custom := NewClient(srv.URL, &http.Client{Timeout: 5 * time.Second})
-	fmt.Println("caller httpClient -> timeout:", custom.httpClient.Timeout)
+	fmt.Println("poll this hash:", result.Hash)
+	fmt.Printf("diagnostics=%d errorResultXdr=%q\n", len(result.DiagnosticEventsXDR), result.ErrorResultXDR)
 
-	latest, err := defaulted.GetLatestLedger(context.Background())
+	// LatestLedger and LatestLedgerCloseTime describe the node's own tip
+	// when it answered, not the ledger this transaction landed in — it has
+	// not landed in one. The close time is unix seconds carried as a string.
+	closeUnix, err := strconv.ParseInt(result.LatestLedgerCloseTime, 10, 64)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("latest ledger:", latest.Sequence)
+	fmt.Printf("node tip: ledger %d closed %s\n", result.LatestLedger, time.Unix(closeUnix, 0).UTC().Format(time.RFC3339))
+
+	// A malformed envelope never reaches a Status. Unlike the fixture
+	// above, this one is a live testnet capture of the real error shape
+	// (testdata/stellar/send_transaction_error.json).
+	badClient, badStop := exampleFixtureClient("send_transaction_error")
+	bad, err := badClient.SendTransaction(context.Background(), "not-xdr")
+	badStop()
+	var rpcErr *RPCError
+	if !errors.As(err, &rpcErr) {
+		log.Fatalf("want *RPCError, got %v", err)
+	}
+	fmt.Printf("rejected call: result=%t code=%d message=%s\n", bad != nil, rpcErr.Code, rpcErr.Message)
 
 	// Output:
-	// zero value: url="" httpClient=false
-	// nil httpClient -> timeout: 30s
-	// caller httpClient -> timeout: 5s
-	// latest ledger: 4611229
+	// zero value: status="" hash="" errorResultXdr=""
+	// accepted: PENDING
+	// poll this hash: d8ec9b68780314ffdfdfc2194b1b35dd27d7303c3bceaef6447e31631a1419dc
+	// diagnostics=0 errorResultXdr=""
+	// node tip: ledger 2553978 closed 2023-11-16T18:28:57Z
+	// rejected call: result=false code=-32602 message=invalid_xdr
+}
+
+// ExampleSimulateCost reads the Cost of a real simulation, and shows the
+// nil case that is the reason SimulateTransactionResult.Cost is a pointer.
+// A caller never builds a SimulateCost: simulateTransaction reports what
+// the trial invocation consumed. The field is optional in the RPC response
+// and omitempty here, and six of the seven recorded simulate fixtures in
+// testdata/stellar carry no cost at all — in fact no live capture in that
+// directory reports one, only the docs-sourced fixture below. So a caller
+// that dereferences Cost without a nil check panics against a successful
+// simulation. MinResourceFee is the number a caller actually needs in order
+// to fund the transaction, and the node sets that one on any simulation
+// that did not error — but it too is omitempty, and a failed simulation
+// carries neither.
+//
+// Both fields are decimal strings rather than numbers: the counters are
+// u64-ranged and a JSON number is not, so the RPC carries them as strings
+// and the caller parses them. The zero value therefore holds two empty
+// strings, which does not mean "cost nothing" — it means "no estimate",
+// and it does not parse.
+func ExampleSimulateCost() {
+	var zero SimulateCost
+	_, parseErr := strconv.ParseUint(zero.CPUInsns, 10, 64)
+	fmt.Printf("zero value: cpuInsns=%q memBytes=%q parses=%t\n", zero.CPUInsns, zero.MemBytes, parseErr == nil)
+
+	// Three recorded simulateTransaction responses. The first, from the
+	// official RPC method reference, reports a cost. The second, captured
+	// live against the deployed price_book contract, succeeded but reports
+	// none. The third, a live capture of a failed simulation, has neither a
+	// cost nor a MinResourceFee — which is why Error is checked first.
+	for _, fixture := range []string{
+		"simulate_transaction_success",
+		"pricebook_publish_02_simulate",
+		"simulate_transaction_error",
+	} {
+		client, stop := exampleFixtureClient(fixture)
+		result, err := client.SimulateTransaction(context.Background(), SimulateTransactionParams{Transaction: "AAAA"})
+		stop()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if result.Error != "" {
+			fmt.Println("simulation failed:", result.Error)
+			continue
+		}
+		if result.Cost == nil {
+			fmt.Printf("%s: no cost reported, minResourceFee=%s\n", fixture, result.MinResourceFee)
+			continue
+		}
+		cpu, err := strconv.ParseUint(result.Cost.CPUInsns, 10, 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+		mem, err := strconv.ParseUint(result.Cost.MemBytes, 10, 64)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s: cpuInsns=%d memBytes=%d minResourceFee=%s\n", fixture, cpu, mem, result.MinResourceFee)
+	}
+
+	// Output:
+	// zero value: cpuInsns="" memBytes="" parses=false
+	// simulate_transaction_success: cpuInsns=1635562 memBytes=1295756 minResourceFee=90353
+	// pricebook_publish_02_simulate: no cost reported, minResourceFee=1454260
+	// simulation failed: Could not unmarshal transaction
+}
+
+// ExampleSimulateHostFunctionResult reads the Results of four real
+// simulations. A caller never builds one: the node returns one entry per
+// host function the transaction invoked, and because simulateTransaction
+// only accepts an envelope carrying a single invokeHostFunction operation
+// (see SimulateTransactionParams), there is exactly one entry to read — on
+// a simulation that did not fail. A failed one carries no Results at all
+// (testdata/stellar/simulate_transaction_error.json holds just an error and
+// a ledger) and SimulateTransaction still returns a nil Go error for it, so
+// Error is checked here before Results is ever indexed.
+//
+// XDR is the invocation's return value as a base64 ScVal, decoded with this
+// package's own helpers — note that a contract returning nothing still
+// produces a value here, ScvVoid, not an empty string.
+//
+// Auth is the interesting half, and it is why this example reads three
+// successful fixtures rather than one. The node reports the authorization
+// entries the invocation would require, so the count is a property of the
+// invocation rather than of the caller: the reference response from the RPC
+// docs needs none, price_book's publish needs one covered by the envelope's
+// own signature (source-account credentials), and statement_registry's
+// resolve_dispute needs two, because CLAUDE.md §4 has it require both the
+// operator's and the consumer's authorization.
+//
+// Reading Auth is not academic. The third fixture is the deliberately
+// auth-less first pass of that dual-authorization call, whose whole purpose
+// per testdata/stellar/README.md is to learn what authorization is needed —
+// its second entry carries address credentials and a nonce, and getting
+// that nonce into the footprint before the final simulation is exactly the
+// problem invoke.go's two-pass submission exists to solve.
+//
+// The zero value has an empty XDR and no entries, so it is not a result.
+func ExampleSimulateHostFunctionResult() {
+	var zero SimulateHostFunctionResult
+	fmt.Printf("zero value: xdr=%q auth=%d\n", zero.XDR, len(zero.Auth))
+
+	for _, fixture := range []string{
+		"simulate_transaction_success",
+		"pricebook_publish_02_simulate",
+		"registry_resolve_dispute_simulate_pass1",
+		"simulate_transaction_error",
+	} {
+		client, stop := exampleFixtureClient(fixture)
+		result, err := client.SimulateTransaction(context.Background(), SimulateTransactionParams{Transaction: "AAAA"})
+		stop()
+		if err != nil {
+			log.Fatal(err)
+		}
+		if result.Error != "" {
+			// Ran and failed: there is no Results[0] to index.
+			fmt.Println("simulation failed:", result.Error)
+			continue
+		}
+		entry := result.Results[0]
+
+		ret, err := UnmarshalScValBase64(entry.XDR)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		signers := make([]string, 0, len(entry.Auth))
+		for _, raw := range entry.Auth {
+			var auth xdr.SorobanAuthorizationEntry
+			if err := xdr.SafeUnmarshalBase64(raw, &auth); err != nil {
+				log.Fatal(err)
+			}
+			switch auth.Credentials.Type {
+			case xdr.SorobanCredentialsTypeSorobanCredentialsSourceAccount:
+				// Authorized by the transaction's own signature; there is
+				// no separate entry to sign.
+				signers = append(signers, "source-account")
+			case xdr.SorobanCredentialsTypeSorobanCredentialsAddress:
+				// A second party, who must sign this entry itself.
+				addr, err := auth.Credentials.Address.Address.String()
+				if err != nil {
+					log.Fatal(err)
+				}
+				signers = append(signers, "address:"+addr)
+			default:
+				// The XDR union has four arms, not two: CAP-71 added
+				// ADDRESS_V2, and ADDRESS_WITH_DELEGATES follows it.
+				// CLAUDE.md §4 records that ADDRESS_V2 authenticates
+				// identically, so it is a shape to expect rather than a
+				// theoretical one. Naming it keeps the count printed below
+				// honest instead of quietly dropping an entry.
+				signers = append(signers, "other:"+auth.Credentials.Type.String())
+			}
+		}
+
+		fmt.Printf("%s:\n  returns %v = %v, auth=%d %v\n", fixture, ret.Type, ret, len(entry.Auth), signers)
+	}
+
+	// Output:
+	// zero value: xdr="" auth=0
+	// simulate_transaction_success:
+	//   returns ScValTypeScvU32 = 12, auth=0 []
+	// pricebook_publish_02_simulate:
+	//   returns ScValTypeScvU32 = 2, auth=1 [source-account]
+	// registry_resolve_dispute_simulate_pass1:
+	//   returns ScValTypeScvVoid = (void), auth=2 [source-account address:GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG]
+	// simulation failed: Could not unmarshal transaction
+}
+
+// ExampleSimulateResourceConfig is the one type in simulateTransaction's
+// request that a caller fills in, and even then its single field is
+// optional. InstructionLeeway raises the CPU instruction budget the node
+// estimates against, which is worth setting when an invocation's real cost
+// can land above what simulation predicted — a contract whose work depends
+// on ledger state that moves between the simulation and the submission.
+//
+// Because SimulateTransactionParams.ResourceConfig is a pointer and
+// InstructionLeeway is omitempty, there are three distinct wire forms, and
+// the middle one is the trap worth seeing: a non-nil config holding a zero
+// leeway marshals to an empty object, which asks the node for nothing while
+// looking deliberate in Go. Leaving the pointer nil is how a caller says
+// "use the node's defaults", and it is what invoke.go does.
+func ExampleSimulateResourceConfig() {
+	for _, c := range []struct {
+		label  string
+		config *SimulateResourceConfig
+	}{
+		{"nil pointer", nil},
+		{"zero value", &SimulateResourceConfig{}},
+		{"explicit leeway", &SimulateResourceConfig{InstructionLeeway: 3_000_000}},
+	} {
+		wire, err := json.Marshal(SimulateTransactionParams{Transaction: "AAAA", ResourceConfig: c.config})
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%-15s %s\n", c.label, wire)
+	}
+
+	// The config changes nothing about the result's shape: the node still
+	// reports its own estimate, and MinResourceFee is still the number the
+	// caller must fund. Replays testdata/stellar/simulate_transaction_success.json,
+	// which its README records as taken from the official RPC method
+	// reference rather than captured live.
+	client, stop := exampleFixtureClient("simulate_transaction_success")
+	defer stop()
+	result, err := client.SimulateTransaction(context.Background(), SimulateTransactionParams{
+		Transaction:    "AAAA",
+		ResourceConfig: &SimulateResourceConfig{InstructionLeeway: 3_000_000},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Nil-checked for the reason ExampleSimulateCost gives: this fixture
+	// happens to report a cost, and a node that does not is still a
+	// successful simulation.
+	if result.Cost != nil {
+		fmt.Println("estimated cpuInsns:", result.Cost.CPUInsns)
+	}
+	fmt.Println("minResourceFee:", result.MinResourceFee)
+
+	// Output:
+	// nil pointer     {"transaction":"AAAA"}
+	// zero value      {"transaction":"AAAA","resourceConfig":{}}
+	// explicit leeway {"transaction":"AAAA","resourceConfig":{"instructionLeeway":3000000}}
+	// estimated cpuInsns: 1635562
+	// minResourceFee: 90353
 }
