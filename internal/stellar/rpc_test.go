@@ -860,3 +860,49 @@ func ExampleGetEventsResult() {
 	// retention: ledgers 4490271..4611230
 	// latest closed at: 2026-09-10T22:35:37Z
 }
+
+// ExampleClient builds a Client the way a caller does: with NewClient. Every
+// Client field is unexported, so a caller sets nothing directly. It passes
+// the RPC endpoint URL, and optionally an *http.Client, and the package
+// handles the rest. With nil, NewClient fills in a client bounded by
+// defaultTimeout, so a call whose ctx has no deadline still cannot hang
+// forever. The request-ID counter is the package's job too. The zero value
+// is not usable: it has no endpoint to send to and no *http.Client to send
+// with, so it is printed here and never called. The endpoint below replays
+// the recorded testnet getLatestLedger response
+// (testdata/stellar/get_latest_ledger.json). A real caller passes the
+// network's RPC URL, TB_STELLAR_RPC_URL.
+func ExampleClient() {
+	var zero Client
+	fmt.Printf("zero value: url=%q httpClient=%t\n", zero.url, zero.httpClient != nil)
+
+	body, err := os.ReadFile(filepath.Join("..", "..", "testdata", "stellar", "get_latest_ledger.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	defer srv.Close()
+
+	// Without an *http.Client, the package fills one in.
+	defaulted := NewClient(srv.URL, nil)
+	fmt.Println("nil httpClient -> timeout:", defaulted.httpClient.Timeout)
+
+	// With one, the caller's client is used as given.
+	custom := NewClient(srv.URL, &http.Client{Timeout: 5 * time.Second})
+	fmt.Println("caller httpClient -> timeout:", custom.httpClient.Timeout)
+
+	latest, err := defaulted.GetLatestLedger(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("latest ledger:", latest.Sequence)
+
+	// Output:
+	// zero value: url="" httpClient=false
+	// nil httpClient -> timeout: 30s
+	// caller httpClient -> timeout: 5s
+	// latest ledger: 4611229
+}
